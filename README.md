@@ -1,10 +1,13 @@
 # Lifecycle & Auction Engine
 
-A campus-focused lifecycle and auction platform. Its primary use case is
-managing abandoned bicycles---from reporting and owner notification to
-claims and auction---while also allowing users to list other products
-for auction. Features include real-time bidding, anti-sniping
-extensions, and safeguards against concurrent bid conflicts.
+The Lifecycle & Auction Engine is designed to manage the lifecycle of campus assets—primarily abandoned or found bicycles—and transition unclaimed items into an online auction platform.
+
+Key workflows envisioned for the platform:
+
+-   **Reporting & Lifecycle Tracking:** A bicycle is found/reported on campus, tagged with an asset tag, logged with location/details, and its lifecycle events are tracked.
+-   **Owner Verification & Claims:** Students/owners can submit ownership claims with evidence, which campus administrators can review and approve/reject.
+-   **Auction & Bidding Engine:** Unclaimed bicycles move to an auction phase with real-time bidding, anti-sniping protection (auto-extending deadlines on last-minute bids), and safeguards against concurrent bid conflicts.
+-   **Notifications:** Alerting users about bicycle status changes, claim outcomes, outbid alerts, etc.
 
 ## Tech Stack
 
@@ -15,9 +18,10 @@ extensions, and safeguards against concurrent bid conflicts.
 
 ## Prerequisites
 
-Install [Git](https://git-scm.com/), [Node.js](https://nodejs.org/),
-[Python 3](https://www.python.org/), and [Docker
-Desktop](https://www.docker.com/products/docker-desktop/).
+Install 
+(i)   [Node.js](https://nodejs.org/)
+(ii)  [Python 3](https://www.python.org/)
+(iii) [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
 ## 1. Clone the repository
 
@@ -27,6 +31,7 @@ cd lifecycle-auction-engine
 ```
 
 ## 2. Configure environment variables
+
 
 Create your local environment file from the example:
 
@@ -41,13 +46,14 @@ Example:
 
 ``` dotenv
 POSTGRES_PASSWORD=choose_a_local_password
-DATABASE_URL=postgresql+psycopg://auction_user:choose_a_local_password@localhost:5433/lifecycle_auction
+DATABASE_URL=postgresql+psycopg://auction_user:choose_a_local_password@127.0.0.1:5433/lifecycle_auction
 ```
 
 The password in `DATABASE_URL` must match `POSTGRES_PASSWORD`. The
 example above assumes Docker Compose maps host port `5433` to
-PostgreSQL's container port `5432`. If your `docker-compose.yml` uses a
-different host port, update the URL to match.
+PostgreSQL's container port `5432`. Use `127.0.0.1` instead of `localhost`
+to prevent IPv6 connection timeouts on Windows.
+
 
 ## 3. Start PostgreSQL
 
@@ -67,13 +73,19 @@ Open a terminal:
 
 ``` bash
 cd backend
-python3 -m venv .venv
+python -m venv .venv
+
+# Activate venv:
+# Windows PowerShell:
+.\.venv\Scripts\activate
+# Linux / macOS:
 source .venv/bin/activate
+
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-If the repository contains database migrations, apply them:
+Apply database migrations:
 
 ``` bash
 alembic upgrade head
@@ -96,7 +108,7 @@ Open a second terminal:
 
 ``` bash
 cd frontend
-npm ci
+npm install
 npm run dev
 ```
 
@@ -109,19 +121,19 @@ After the initial setup, start Docker and run the backend and frontend
 in separate terminals:
 
 ``` bash
-# Project root
+# Project root: start DB
 docker compose up -d postgres
 ```
 
 ``` bash
-# Backend terminal
+# Backend terminal:
 cd backend
-source .venv/bin/activate
+# Windows: .\.venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
 uvicorn app.main:app --reload
 ```
 
 ``` bash
-# Frontend terminal
+# Frontend terminal:
 cd frontend
 npm run dev
 ```
