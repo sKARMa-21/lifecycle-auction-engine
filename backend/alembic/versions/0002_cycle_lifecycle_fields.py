@@ -1,9 +1,3 @@
-"""Add student profile and cycle lifecycle state management fields.
-
-Revision ID: 0002_cycle_lifecycle_fields
-Revises: 0001_initial_schema
-Create Date: 2026-10-17
-"""
 from alembic import op
 import sqlalchemy as sa
 
