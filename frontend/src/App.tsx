@@ -11,50 +11,37 @@ interface User {
 }
 
 function AuthPage({ onLogin }: { onLogin: (u: User) => void }) {
-  const [isRegister, setIsRegister] = useState(true)
+  const [isRegister, setIsRegister] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState('')
   const navigate = useNavigate()
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setMsg('')
-    try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ full_name: name, email, password }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setMsg('Registered! Please login now.')
-        setIsRegister(false)
-        setPassword('')
-      } else {
-        setMsg(data.detail || 'Registration failed')
-      }
-    } catch {
-      setMsg('Cannot connect to backend server')
-    }
-  }
+    const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login'
+    const body = isRegister ? { full_name: name, email, password } : { email, password }
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setMsg('')
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/auth/login', {
+      const res = await fetch(`http://127.0.0.1:8000${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (res.ok) {
-        onLogin(data)
-        navigate('/dashboard')
+        if (isRegister) {
+          setMsg('Account created! Please sign in.')
+          setIsRegister(false)
+          setPassword('')
+        } else {
+          onLogin(data)
+          navigate('/dashboard')
+        }
       } else {
-        setMsg(data.detail || 'Login failed')
+        setMsg(data.detail || 'Authentication failed')
       }
     } catch {
       setMsg('Cannot connect to backend server')
@@ -62,65 +49,42 @@ function AuthPage({ onLogin }: { onLogin: (u: User) => void }) {
   }
 
   return (
-    <div className="page-container">
-      <header className="page-header">
-        <h1>Lifecycle &amp; Auction Engine</h1>
-      </header>
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="brand-badge">CycleEngine</div>
+        <h2>{isRegister ? 'Create Account' : 'Welcome Back'}</h2>
+        <p className="subtitle">{isRegister ? 'Register your student LDAP' : 'Sign in to access lifecycle portal'}</p>
 
-      <main className="page-main">
-        <div className="form-box">
-          <h2>{isRegister ? 'Register' : 'Login'}</h2>
-          {msg && <p className="msg-text">{msg}</p>}
+        {msg && <div className="alert">{msg}</div>}
 
-          <form onSubmit={isRegister ? handleRegister : handleLogin}>
-            {isRegister && (
-              <div className="field">
-                <label>Full Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
-              </div>
-            )}
-
+        <form onSubmit={handleSubmit}>
+          {isRegister && (
             <div className="field">
-              <label>LDAP ID</label>
-              <input
-                type="text"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <label>Full Name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full Name" required />
             </div>
+          )}
+          <div className="field">
+            <label>LDAP ID / Email</label>
+            <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="rollnumber@iitb.ac.in" required />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required />
+          </div>
 
-            <div className="field">
-              <label>Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
+          <button type="submit" className="btn-submit">
+            {isRegister ? 'Register' : 'Sign In'}
+          </button>
+        </form>
 
-            <button type="submit">{isRegister ? 'Register' : 'Login'}</button>
-          </form>
-
-          <p className="toggle-text">
-            {isRegister ? (
-              <span>Already have an account? <button type="button" className="text-btn" onClick={() => { setIsRegister(false); setMsg('') }}>Login</button></span>
-            ) : (
-              <span>Need an account? <button type="button" className="text-btn" onClick={() => { setIsRegister(true); setMsg('') }}>Register</button></span>
-            )}
-          </p>
-        </div>
-      </main>
-
-      <footer className="page-footer">
-        <p>CS699 - Lifecycle &amp; Auction Engine</p>
-      </footer>
+        <p className="toggle-msg">
+          {isRegister ? 'Already have an account?' : 'Need an account?'}
+          <button type="button" className="btn-toggle" onClick={() => { setIsRegister(!isRegister); setMsg('') }}>
+            {isRegister ? 'Sign In' : 'Register'}
+          </button>
+        </p>
+      </div>
     </div>
   )
 }
