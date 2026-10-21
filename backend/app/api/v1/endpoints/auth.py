@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.user import UserRegister, UserLogin, UserOut
 from app.core.security import hash_password, verify_password
 
@@ -24,7 +24,7 @@ def register(body: UserRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     # simple rbac: emails starting with admin get admin role, rest are students
-    role = "admin" if body.email.lower().startswith("admin") else "student"
+    role = UserRole.ADMIN if body.email.lower().startswith("admin") else UserRole.STUDENT
 
     user = User(
         full_name=body.full_name,
