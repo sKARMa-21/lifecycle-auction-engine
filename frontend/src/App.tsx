@@ -1,14 +1,9 @@
 import React, { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Dashboard from './Dashboard'
+import type { User } from './types/user'
+import { authStorage } from './lib/authStorage'
 import './App.css'
-
-interface User {
-  id: number
-  full_name: string
-  email: string
-  role: string
-}
 
 function AuthPage({ onLogin }: { onLogin: (u: User) => void }) {
   const [isRegister, setIsRegister] = useState(false)
@@ -90,13 +85,23 @@ function AuthPage({ onLogin }: { onLogin: (u: User) => void }) {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<User | null>(() => authStorage.getUser())
+
+  const handleLogin = (u: User) => {
+    authStorage.setUser(u)
+    setUser(u)
+  }
+
+  const handleLogout = () => {
+    authStorage.clearUser()
+    setUser(null)
+  }
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={user ? <Navigate to="/dashboard" /> : <AuthPage onLogin={setUser} />} />
-        <Route path="/dashboard" element={user ? <Dashboard user={user} onLogout={() => setUser(null)} /> : <Navigate to="/" />} />
+        <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <AuthPage onLogin={handleLogin} />} />
+        <Route path="/dashboard" element={user ? <Dashboard user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )
