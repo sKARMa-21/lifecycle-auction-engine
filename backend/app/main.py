@@ -16,6 +16,11 @@ app.add_middleware(
 )
 
 
+from app.api.v1.endpoints.bicycles import router as bicycles_router
+
+app.include_router(bicycles_router, prefix="/api/v1")
+
+
 @app.get("/", tags=["General"])
 def root():
     return {
@@ -27,3 +32,4 @@ def root():
 @app.get("/health/live", tags=["Health"])
 def health_live():
     return {"status": "alive"}
+
