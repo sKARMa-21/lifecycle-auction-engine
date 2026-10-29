@@ -18,6 +18,11 @@ class BicycleLifecycleService:
     AUTHORITY_ROLES = {"security_guard", "warden", "admin"}
     DEFAULT_GRACE_PERIOD_DAYS = 30
 
+    @staticmethod
+    def _is_owner_or_admin(bicycle: Bicycle, actor: User) -> bool:
+        """Helper to verify if the actor owns the cycle or is an administrator."""
+        return (bicycle.owner_id is not None and bicycle.owner_id == actor.id) or actor.role == "admin"
+
     @classmethod
     def tag_as_asset(
         cls,
@@ -46,7 +51,7 @@ class BicycleLifecycleService:
         # Check degree duration protection for student owners
         if bicycle.owner and bicycle.owner.role == "student":
             if bicycle.owner.is_degree_active(current_year):
-                grad_year = bicycle.owner.graduation_year or (bicycle.owner.enrollment_year + (bicycle.owner.degree_duration_years or 4))
+                grad_year = bicycle.owner.graduation_year or "unknown"
                 raise DegreeDurationActiveError(
                     f"Protected by degree duration: Owner '{bicycle.owner.full_name}' is currently enrolled "
                     f"in {bicycle.owner.degree_type or 'degree'} (enrolled: {bicycle.owner.enrollment_year}, expected graduation: {grad_year}). "
@@ -73,10 +78,7 @@ class BicycleLifecycleService:
                 f"Cannot mark auctionable: Bicycle is currently in '{bicycle.status}', expected '{BicycleStatus.ACTIVE.value}'."
             )
 
-        is_owner = bicycle.owner_id is not None and bicycle.owner_id == actor.id
-        is_admin = actor.role == "admin"
-
-        if not (is_owner or is_admin):
+        if not cls._is_owner_or_admin(bicycle, actor):
             raise UnauthorizedTransitionError(
                 "Only the registered cycle owner or an administrator can directly move an active cycle to auctionable."
             )
@@ -96,10 +98,7 @@ class BicycleLifecycleService:
                 f"Cannot reclaim: Bicycle is in '{bicycle.status}' state, expected '{BicycleStatus.ASSET.value}'."
             )
 
-        is_owner = bicycle.owner_id is not None and bicycle.owner_id == actor.id
-        is_admin = actor.role == "admin"
-
-        if not (is_owner or is_admin):
+        if not cls._is_owner_or_admin(bicycle, actor):
             raise UnauthorizedTransitionError("Only the owner or an admin can reclaim an impounded asset.")
 
         bicycle.status = BicycleStatus.ACTIVE.value

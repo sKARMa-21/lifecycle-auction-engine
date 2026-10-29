@@ -1,5 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.core.exceptions import (
+    DegreeDurationActiveError,
+    GracePeriodNotExpiredError,
+    InvalidStateTransitionError,
+    UnauthorizedTransitionError,
+)
 
 app = FastAPI(
     title="Lifecycle & Auction Engine",
@@ -14,6 +22,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Global exception handlers for domain errors
+@app.exception_handler(InvalidStateTransitionError)
+async def invalid_transition_handler(request: Request, exc: InvalidStateTransitionError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(GracePeriodNotExpiredError)
+async def grace_period_handler(request: Request, exc: GracePeriodNotExpiredError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(UnauthorizedTransitionError)
+async def unauthorized_transition_handler(request: Request, exc: UnauthorizedTransitionError):
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+
+@app.exception_handler(DegreeDurationActiveError)
+async def degree_duration_handler(request: Request, exc: DegreeDurationActiveError):
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
 
 
 from app.api.v1.endpoints.bicycles import router as bicycles_router
@@ -32,4 +61,3 @@ def root():
 @app.get("/health/live", tags=["Health"])
 def health_live():
     return {"status": "alive"}
-

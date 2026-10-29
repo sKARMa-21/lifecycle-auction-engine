@@ -3,12 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import (
-    DegreeDurationActiveError,
-    GracePeriodNotExpiredError,
-    InvalidStateTransitionError,
-    UnauthorizedTransitionError,
-)
 from app.db.session import SessionLocal
 from app.models.bicycle import Bicycle
 from app.models.user import User
@@ -88,17 +82,10 @@ def tag_as_asset(
     bicycle = get_bicycle_or_404(bicycle_id, db)
     actor = get_user_or_404(payload.actor_id, db)
 
-    try:
-        updated_bike = BicycleLifecycleService.tag_as_asset(bicycle, actor)
-        db.commit()
-        db.refresh(updated_bike)
-        return updated_bike
-    except DegreeDurationActiveError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except UnauthorizedTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except InvalidStateTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    updated_bike = BicycleLifecycleService.tag_as_asset(bicycle, actor)
+    db.commit()
+    db.refresh(updated_bike)
+    return updated_bike
 
 
 @router.post("/{bicycle_id}/set-auctionable", response_model=BicycleRead)
@@ -111,15 +98,10 @@ def set_auctionable(
     bicycle = get_bicycle_or_404(bicycle_id, db)
     actor = get_user_or_404(payload.actor_id, db)
 
-    try:
-        updated_bike = BicycleLifecycleService.mark_as_auctionable_by_owner(bicycle, actor)
-        db.commit()
-        db.refresh(updated_bike)
-        return updated_bike
-    except UnauthorizedTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except InvalidStateTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    updated_bike = BicycleLifecycleService.mark_as_auctionable_by_owner(bicycle, actor)
+    db.commit()
+    db.refresh(updated_bike)
+    return updated_bike
 
 
 @router.post("/{bicycle_id}/reclaim", response_model=BicycleRead)
@@ -132,15 +114,10 @@ def reclaim_bicycle(
     bicycle = get_bicycle_or_404(bicycle_id, db)
     actor = get_user_or_404(payload.actor_id, db)
 
-    try:
-        updated_bike = BicycleLifecycleService.reclaim_bicycle(bicycle, actor)
-        db.commit()
-        db.refresh(updated_bike)
-        return updated_bike
-    except UnauthorizedTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except InvalidStateTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    updated_bike = BicycleLifecycleService.reclaim_bicycle(bicycle, actor)
+    db.commit()
+    db.refresh(updated_bike)
+    return updated_bike
 
 
 @router.post("/{bicycle_id}/promote-auctionable", response_model=BicycleRead)
@@ -151,22 +128,16 @@ def promote_auctionable(
     """Promotes an ASSET cycle to AUCTIONABLE after the 30-day grace period has passed."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
 
-    try:
-        updated_bike = BicycleLifecycleService.promote_asset_to_auctionable(bicycle)
-        db.commit()
-        db.refresh(updated_bike)
-        return updated_bike
-    except GracePeriodNotExpiredError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    except InvalidStateTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    updated_bike = BicycleLifecycleService.promote_asset_to_auctionable(bicycle)
+    db.commit()
+    db.refresh(updated_bike)
+    return updated_bike
 
 
 @router.post("/cron/process-expired-assets", response_model=List[BicycleRead])
 def process_expired_assets(db: Session = Depends(get_db)):
     """Automated job endpoint: scans all ASSET cycles and transitions expired ones to AUCTIONABLE."""
-    promoted = BicycleLifecycleService.process_expired_assets(db)
-    return promoted
+    return BicycleLifecycleService.process_expired_assets(db)
 
 
 @router.post("/{bicycle_id}/mark-sold", response_model=BicycleRead)
@@ -178,17 +149,14 @@ def mark_sold(
     """Finalizes cycle state from AUCTIONABLE to SOLD and records sale analytics."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
 
-    try:
-        updated_bike = BicycleLifecycleService.mark_as_sold(
-            bicycle=bicycle,
-            cycle_condition=payload.cycle_condition,
-            market_value=payload.market_value,
-            years_used=payload.years_used,
-            base_price_set=payload.base_price_set,
-            sold_price=payload.sold_price,
-        )
-        db.commit()
-        db.refresh(updated_bike)
-        return updated_bike
-    except InvalidStateTransitionError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    updated_bike = BicycleLifecycleService.mark_as_sold(
+        bicycle=bicycle,
+        cycle_condition=payload.cycle_condition,
+        market_value=payload.market_value,
+        years_used=payload.years_used,
+        base_price_set=payload.base_price_set,
+        sold_price=payload.sold_price,
+    )
+    db.commit()
+    db.refresh(updated_bike)
+    return updated_bike
