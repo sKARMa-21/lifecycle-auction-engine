@@ -8,6 +8,7 @@ from app.core.exceptions import (
     InvalidStateTransitionError,
     UnauthorizedTransitionError,
 )
+from app.api.v1 import api_router
 
 app = FastAPI(
     title="Lifecycle & Auction Engine",
@@ -17,11 +18,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(api_router, prefix="/api/v1")
 
 
 # Global exception handlers for domain errors
@@ -43,11 +46,6 @@ async def unauthorized_transition_handler(request: Request, exc: UnauthorizedTra
 @app.exception_handler(DegreeDurationActiveError)
 async def degree_duration_handler(request: Request, exc: DegreeDurationActiveError):
     return JSONResponse(status_code=403, content={"detail": str(exc)})
-
-
-from app.api.v1.endpoints.bicycles import router as bicycles_router
-
-app.include_router(bicycles_router, prefix="/api/v1")
 
 
 @app.get("/", tags=["General"])

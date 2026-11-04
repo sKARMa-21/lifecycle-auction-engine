@@ -1,122 +1,108 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import React, { useState } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import Dashboard from './Dashboard'
+import type { User } from './types/user'
+import { authStorage } from './lib/authStorage'
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+function AuthPage({ onLogin }: { onLogin: (u: User) => void }) {
+  const [isRegister, setIsRegister] = useState(false)
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [msg, setMsg] = useState('')
+  const navigate = useNavigate()
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setMsg('')
+    const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login'
+    const body = isRegister ? { full_name: name, email, password } : { email, password }
+
+    try {
+      const res = await fetch(`http://127.0.0.1:8000${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        if (isRegister) {
+          setMsg('Account created! Please sign in.')
+          setIsRegister(false)
+          setPassword('')
+        } else {
+          onLogin(data)
+          navigate('/dashboard')
+        }
+      } else {
+        setMsg(data.detail || 'Authentication failed')
+      }
+    } catch {
+      setMsg('Cannot connect to backend server')
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edited <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="brand-badge">CycleEngine</div>
+        <h2>{isRegister ? 'Create Account' : 'Welcome Back'}</h2>
+        <p className="subtitle">{isRegister ? 'Register your student LDAP' : 'Sign in to access lifecycle portal'}</p>
 
-      <div className="ticks"></div>
+        {msg && <div className="alert">{msg}</div>}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        <form onSubmit={handleSubmit}>
+          {isRegister && (
+            <div className="field">
+              <label>Full Name</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Full Name" required />
+            </div>
+          )}
+          <div className="field">
+            <label>LDAP ID / Email</label>
+            <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="rollnumber@iitb.ac.in" required />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required />
+          </div>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+          <button type="submit" className="btn-submit">
+            {isRegister ? 'Register' : 'Sign In'}
+          </button>
+        </form>
+
+        <p className="toggle-msg">
+          {isRegister ? 'Already have an account?' : 'Need an account?'}
+          <button type="button" className="btn-toggle" onClick={() => { setIsRegister(!isRegister); setMsg('') }}>
+            {isRegister ? 'Sign In' : 'Register'}
+          </button>
+        </p>
+      </div>
+    </div>
   )
 }
 
-export default App
+export default function App() {
+  const [user, setUser] = useState<User | null>(() => authStorage.getUser())
+
+  const handleLogin = (u: User) => {
+    authStorage.setUser(u)
+    setUser(u)
+  }
+
+  const handleLogout = () => {
+    authStorage.clearUser()
+    setUser(null)
+  }
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <AuthPage onLogin={handleLogin} />} />
+        <Route path="/dashboard" element={user ? <Dashboard user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
