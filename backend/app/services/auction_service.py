@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.auction import Auction, Bid, AuctionStatus
@@ -10,13 +10,12 @@ class AuctionService:
     def create_auction(db: Session, data: AuctionCreate) -> Auction:
         auction = Auction(
             bicycle_id=data.bicycle_id,
+            created_by_id=data.created_by_id,
             title=data.title,
-            description=data.description,
             starting_price=data.starting_price,
             current_highest_bid=data.starting_price,
-            bid_increment=data.bid_increment,
-            start_time=data.start_time,
-            end_time=data.end_time,
+            min_bid_increment=data.min_bid_increment,
+            ends_at=data.ends_at,
             anti_snipe_trigger_window=data.anti_snipe_trigger_window,
             anti_snipe_extension_minutes=data.anti_snipe_extension_minutes,
             status=AuctionStatus.ACTIVE,
@@ -39,23 +38,20 @@ class AuctionService:
         if not auction:
             raise HTTPException(status_code=404, detail="Auction not found")
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         if auction.status not in [AuctionStatus.ACTIVE, AuctionStatus.EXTENDED]:
             raise HTTPException(status_code=400, detail="Auction is closed or inactive")
 
-        if now < auction.start_time:
-            raise HTTPException(status_code=400, detail="Auction has not started yet")
-
-        if now > auction.end_time:
+        if now > auction.ends_at:
             auction.status = AuctionStatus.ENDED
             db.commit()
             raise HTTPException(status_code=400, detail="Auction deadline has passed")
 
         # Validate minimum bid threshold
         min_required_bid = (
-            auction.current_highest_bid + auction.bid_increment
-            if auction.current_highest_bidder_id is not None
+            auction.current_highest_bid + auction.min_bid_increment
+            if auction.current_winner_id is not None
             else auction.starting_price
         )
 
@@ -65,27 +61,28 @@ class AuctionService:
                 detail=f"Bid amount too low. Minimum acceptable bid is {min_required_bid}"
             )
 
-        if auction.current_highest_bidder_id == bid_in.user_id:
+        if auction.current_winner_id == bid_in.bidder_id:
             raise HTTPException(status_code=400, detail="You are already the highest bidder")
 
         # Create bid record
         new_bid = Bid(
             auction_id=auction.id,
-            user_id=bid_in.user_id,
+            bidder_id=bid_in.bidder_id,
             amount=bid_in.amount,
-            created_at=now,
+            placed_at=now,
         )
         db.add(new_bid)
 
         # Update auction state
         auction.current_highest_bid = bid_in.amount
-        auction.current_highest_bidder_id = bid_in.user_id
+        auction.current_winner_id = bid_in.bidder_id
 
         # Anti-sniping dynamic extension:
-        time_left = auction.end_time - now
+        time_left = auction.ends_at - now
         threshold = timedelta(minutes=auction.anti_snipe_trigger_window)
         if time_left < threshold:
-            auction.end_time = auction.end_time + timedelta(minutes=auction.anti_snipe_extension_minutes)
+            auction.ends_at = auction.ends_at + timedelta(minutes=auction.anti_snipe_extension_minutes)
+            auction.extension_count = (auction.extension_count or 0) + 1
             auction.status = AuctionStatus.EXTENDED
 
         db.commit()

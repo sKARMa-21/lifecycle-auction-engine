@@ -10,12 +10,12 @@ from app.core.exceptions import (
     InvalidStateTransitionError,
     UnauthorizedTransitionError,
 )
-from app.models.bicycle import Bicycle, BicycleStatus
+from app.models.bicycle import Bicycle, BicycleStatus, CycleState
 from app.models.user import User
 
 
 class BicycleLifecycleService:
-    AUTHORITY_ROLES = {"security_guard", "warden", "admin"}
+    AUTHORITY_ROLES = {"guard", "admin"}
     DEFAULT_GRACE_PERIOD_DAYS = 30
 
     @staticmethod
@@ -59,6 +59,7 @@ class BicycleLifecycleService:
                 )
 
         bicycle.status = BicycleStatus.ASSET.value
+        bicycle.current_state = BicycleStatus.ASSET
         bicycle.asset_tagged_at = now
         return bicycle
 
@@ -84,6 +85,7 @@ class BicycleLifecycleService:
             )
 
         bicycle.status = BicycleStatus.AUCTIONABLE.value
+        bicycle.current_state = BicycleStatus.AUCTIONABLE
         return bicycle
 
     @classmethod
@@ -102,6 +104,7 @@ class BicycleLifecycleService:
             raise UnauthorizedTransitionError("Only the owner or an admin can reclaim an impounded asset.")
 
         bicycle.status = BicycleStatus.ACTIVE.value
+        bicycle.current_state = BicycleStatus.ACTIVE
         bicycle.asset_tagged_at = None
         return bicycle
 
@@ -131,6 +134,7 @@ class BicycleLifecycleService:
             )
 
         bicycle.status = BicycleStatus.AUCTIONABLE.value
+        bicycle.current_state = BicycleStatus.AUCTIONABLE
         return bicycle
 
     @classmethod
@@ -152,6 +156,7 @@ class BicycleLifecycleService:
 
         for bike in expired_assets:
             bike.status = BicycleStatus.AUCTIONABLE.value
+            bike.current_state = BicycleStatus.AUCTIONABLE
 
         db.commit()
         return expired_assets
@@ -173,6 +178,7 @@ class BicycleLifecycleService:
             )
 
         bicycle.status = BicycleStatus.SOLD.value
+        bicycle.current_state = BicycleStatus.SOLD
         if cycle_condition is not None:
             bicycle.cycle_condition = cycle_condition
         if market_value is not None:

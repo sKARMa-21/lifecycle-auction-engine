@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+from app.db.session import get_db
 from app.models.bicycle import Bicycle
 from app.models.user import User
 from app.schemas.bicycle import BicycleCreate, BicycleRead
@@ -16,14 +16,6 @@ from app.schemas.lifecycle import (
 from app.services.lifecycle_service import BicycleLifecycleService
 
 router = APIRouter(prefix="/bicycles", tags=["Bicycle Lifecycle"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def get_bicycle_or_404(bicycle_id: int, db: Session) -> Bicycle:

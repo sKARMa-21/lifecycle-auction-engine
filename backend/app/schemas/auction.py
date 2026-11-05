@@ -5,16 +5,16 @@ from app.models.auction import AuctionStatus
 
 
 class BidCreate(BaseModel):
-    user_id: int
+    bidder_id: int
     amount: float = Field(..., gt=0)
 
 
 class BidResponse(BaseModel):
     id: int
     auction_id: int
-    user_id: int
+    bidder_id: int
     amount: float
-    created_at: datetime
+    placed_at: datetime
 
     class Config:
         from_attributes = True
@@ -22,12 +22,11 @@ class BidResponse(BaseModel):
 
 class AuctionCreate(BaseModel):
     bicycle_id: int
+    created_by_id: int
     title: str
-    description: Optional[str] = None
     starting_price: float = Field(..., ge=0)
-    bid_increment: float = 50.0
-    start_time: datetime
-    end_time: datetime
+    min_bid_increment: float = 20.0
+    ends_at: datetime
     anti_snipe_trigger_window: int = 5
     anti_snipe_extension_minutes: int = 5
 
@@ -35,14 +34,13 @@ class AuctionCreate(BaseModel):
 class AuctionResponse(BaseModel):
     id: int
     bicycle_id: int
+    created_by_id: int
     title: str
-    description: Optional[str]
     starting_price: float
     current_highest_bid: float
-    current_highest_bidder_id: Optional[int]
-    bid_increment: float
-    start_time: datetime
-    end_time: datetime
+    current_winner_id: Optional[int]
+    min_bid_increment: float
+    ends_at: datetime
     status: AuctionStatus
     created_at: datetime
     bids: List[BidResponse] = []
