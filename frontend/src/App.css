@@ -178,3 +178,137 @@ body {
   font-size: 0.8rem;
   color: var(--text-muted);
 }
+
+/* Wide Layout & Compact Table for Bicycles */
+.page-wide {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.bar h2 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.card-wide {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(24,24,24,0.03);
+}
+
+.card-wide h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.form-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.form-inline input,
+.form-inline select {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.88rem;
+  background: var(--bg);
+  color: var(--text);
+  flex: 1 1 150px;
+}
+
+.form-inline input:focus,
+.form-inline select:focus {
+  outline: none;
+  border-color: var(--text-olive);
+  background: #fff;
+}
+
+.btn-sm {
+  width: auto;
+  padding: 8px 18px;
+  margin-top: 0;
+}
+
+/* Simple Clean Table */
+.simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.simple-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.simple-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.simple-table tr:last-child td {
+  border-bottom: none;
+}
+
+.inline-select {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.84rem;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  text-decoration: underline;
+}
+
+.btn-link:hover {
+  color: var(--text-olive);
+}
+
+.btn-danger {
+  color: #c92a2a;
+}
+
+.btn-danger:hover {
+  color: #e03131;
+}
+

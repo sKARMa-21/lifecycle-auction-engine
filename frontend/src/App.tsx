@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Dashboard from './Dashboard'
+import BicyclesPage from './BicyclesPage'
 import type { User } from './types/user'
 import { authStorage } from './lib/authStorage'
 import './App.css'
@@ -102,6 +103,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <AuthPage onLogin={handleLogin} />} />
         <Route path="/dashboard" element={user ? <Dashboard user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />} />
+        <Route path="/bicycles" element={user ? <BicyclesPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )

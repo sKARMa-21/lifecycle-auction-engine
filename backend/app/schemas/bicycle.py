@@ -18,6 +18,21 @@ class BicycleCreate(BicycleBase):
     owner_id: Optional[int] = None
 
 
+class BicycleUpdate(BaseModel):
+    asset_tag: Optional[str] = None
+    serial_number: Optional[str] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    color: Optional[str] = None
+    description: Optional[str] = None
+    found_location: Optional[str] = None
+    owner_id: Optional[int] = None
+
+
+class TransferOwnershipRequest(BaseModel):
+    new_owner_id: Optional[int] = None
+
+
 class BicycleRead(BicycleBase):
     id: int
     status: str

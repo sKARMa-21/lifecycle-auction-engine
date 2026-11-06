@@ -1,4 +1,5 @@
 import type { User } from './types/user'
+import { Link } from 'react-router-dom'
 
 interface DashboardProps {
   user: User
@@ -22,9 +23,15 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
           <p className="panel-desc">You have active access to the lifecycle auction portal.</p>
         </div>
 
-        <button type="button" className="btn-submit" onClick={onLogout}>
-          Sign Out
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px' }}>
+          <Link to="/bicycles" className="btn-submit" style={{ textAlign: 'center', textDecoration: 'none' }}>
+            Manage Bicycles →
+          </Link>
+
+          <button type="button" className="btn-secondary" onClick={onLogout}>
+            Sign Out
+          </button>
+        </div>
       </div>
     </div>
   )

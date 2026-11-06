@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.bicycle import Bicycle
 from app.models.user import User
-from app.schemas.bicycle import BicycleCreate, BicycleRead
+from app.schemas.bicycle import (
+    BicycleCreate,
+    BicycleRead,
+    BicycleUpdate,
+    TransferOwnershipRequest,
+)
 from app.schemas.lifecycle import (
     MarkAuctionableRequest,
     MarkSoldRequest,
@@ -55,10 +60,73 @@ def create_bicycle(payload: BicycleCreate, db: Session = Depends(get_db)):
     return bicycle
 
 
+@router.get("/", response_model=List[BicycleRead])
+def list_bicycles(
+    skip: int = 0,
+    limit: int = 100,
+    owner_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Retrieve all bicycles with optional filtering by owner."""
+    query = select(Bicycle)
+    if owner_id is not None:
+        query = query.where(Bicycle.owner_id == owner_id)
+    query = query.offset(skip).limit(limit).order_by(Bicycle.id.desc())
+    return list(db.scalars(query).all())
+
+
 @router.get("/{bicycle_id}", response_model=BicycleRead)
 def get_bicycle(bicycle_id: int, db: Session = Depends(get_db)):
     """Retrieve details and lifecycle state of a bicycle."""
     return get_bicycle_or_404(bicycle_id, db)
+
+
+@router.put("/{bicycle_id}", response_model=BicycleRead)
+def update_bicycle(
+    bicycle_id: int,
+    payload: BicycleUpdate,
+    db: Session = Depends(get_db),
+):
+    """Update details of a bicycle."""
+    bicycle = get_bicycle_or_404(bicycle_id, db)
+    update_data = payload.model_dump(exclude_unset=True)
+
+    if "owner_id" in update_data and update_data["owner_id"] is not None:
+        get_user_or_404(update_data["owner_id"], db)
+
+    for field, value in update_data.items():
+        setattr(bicycle, field, value)
+
+    db.commit()
+    db.refresh(bicycle)
+    return bicycle
+
+
+@router.patch("/{bicycle_id}/transfer", response_model=BicycleRead)
+def transfer_bicycle_ownership(
+    bicycle_id: int,
+    payload: TransferOwnershipRequest,
+    db: Session = Depends(get_db),
+):
+    """Transfer ownership of a bicycle to another user."""
+    bicycle = get_bicycle_or_404(bicycle_id, db)
+    if payload.new_owner_id is not None:
+        get_user_or_404(payload.new_owner_id, db)
+
+    bicycle.owner_id = payload.new_owner_id
+    bicycle.current_owner_id = payload.new_owner_id
+    db.commit()
+    db.refresh(bicycle)
+    return bicycle
+
+
+@router.delete("/{bicycle_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_bicycle(bicycle_id: int, db: Session = Depends(get_db)):
+    """Delete a bicycle from the system."""
+    bicycle = get_bicycle_or_404(bicycle_id, db)
+    db.delete(bicycle)
+    db.commit()
+    return None
 
 
 @router.post("/{bicycle_id}/tag-asset", response_model=BicycleRead)

@@ -30,6 +30,12 @@ def register(body: UserRegister, db: Session = Depends(get_db)):
     db.refresh(user)
     return user
 
+@router.get("/users", response_model=list[UserOut])
+def list_users(db: Session = Depends(get_db)):
+    """List all registered users for selection."""
+    return list(db.scalars(select(User).order_by(User.id)).all())
+
+
 @router.post("/login", response_model=UserOut)
 def login(body: UserLogin, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == body.email))
