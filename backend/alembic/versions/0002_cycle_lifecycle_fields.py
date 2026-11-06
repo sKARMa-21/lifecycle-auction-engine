@@ -42,20 +42,21 @@ def upgrade() -> None:
 
     # 2. Users Table Updates (preserves 0002_cycle_lifecycle_fields + adds v2 fields)
     op.execute("ALTER TABLE users DROP COLUMN IF EXISTS role CASCADE")
-    op.add_column("users", sa.Column("role", user_role_enum, nullable=False, server_default="student"))
-    op.add_column("users", sa.Column("phone_number", sa.String(length=30), nullable=True))
-    op.add_column("users", sa.Column("degree_type", sa.String(length=50), nullable=True))
-    op.add_column("users", sa.Column("degree_duration_years", sa.Integer(), nullable=True))
-    op.add_column("users", sa.Column("enrollment_year", sa.Integer(), nullable=True))
-    op.add_column("users", sa.Column("joining_year", sa.Integer(), nullable=True))
-    op.add_column("users", sa.Column("course_duration_years", sa.Integer(), nullable=True))
-    op.add_column("users", sa.Column("degree_end_date", sa.Date(), nullable=True))
-    op.add_column("users", sa.Column("hostel_name", sa.String(length=100), nullable=True))
-    op.add_column("users", sa.Column("room_number", sa.String(length=50), nullable=True))
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role user_role NOT NULL DEFAULT 'student'")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR(30)")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS degree_type VARCHAR(50)")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS degree_duration_years INTEGER")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS enrollment_year INTEGER")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS joining_year INTEGER")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS course_duration_years INTEGER")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS degree_end_date DATE")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS hostel_name VARCHAR(100)")
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS room_number VARCHAR(50)")
 
-    op.create_index("idx_users_degree_end_date", "users", ["degree_end_date"])
+    op.execute("CREATE INDEX IF NOT EXISTS idx_users_degree_end_date ON users (degree_end_date)")
 
     # 3. QR Stickers Table
+    op.execute("DROP TABLE IF EXISTS qr_stickers CASCADE")
     op.create_table(
         "qr_stickers",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -124,6 +125,7 @@ def upgrade() -> None:
     op.create_index("idx_bicycles_tagged_asset", "bicycles", ["tagged_as_asset_at"], postgresql_where=sa.text("current_state = 'asset'"))
 
     # 5. Lifecycle Events Table
+    op.execute("DROP TABLE IF EXISTS lifecycle_events CASCADE")
     op.create_table(
         "lifecycle_events",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -142,6 +144,7 @@ def upgrade() -> None:
     op.create_index("idx_lifecycle_events_bicycle", "lifecycle_events", ["bicycle_id"])
 
     # 6. Auctions Table
+    op.execute("DROP TABLE IF EXISTS auctions CASCADE")
     op.create_table(
         "auctions",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -167,6 +170,7 @@ def upgrade() -> None:
     op.create_index("idx_auctions_status_ends", "auctions", ["status", "ends_at"])
 
     # 7. Bids Table
+    op.execute("DROP TABLE IF EXISTS bids CASCADE")
     op.create_table(
         "bids",
         sa.Column("id", sa.Integer(), nullable=False),

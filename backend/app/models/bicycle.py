@@ -117,7 +117,7 @@ class Bicycle(Base):
         "User", back_populates="bicycles", foreign_keys=[current_owner_id]
     )
     active_sticker: Mapped[Optional["QRSticker"]] = relationship(
-        "QRSticker", foreign_keys=[active_sticker_id], back_populates="bicycle"
+        "QRSticker", foreign_keys=[active_sticker_id]
     )
     events: Mapped[List["LifecycleEvent"]] = relationship(
         "LifecycleEvent", back_populates="bicycle", cascade="all, delete-orphan"
