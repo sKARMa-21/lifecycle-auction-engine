@@ -159,6 +159,8 @@ def upgrade() -> None:
         sa.Column("ends_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("payment_deadline", sa.DateTime(timezone=True), nullable=True),
         sa.Column("extension_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("anti_snipe_trigger_window", sa.Integer(), nullable=True, server_default="5"),
+        sa.Column("anti_snipe_extension_minutes", sa.Integer(), nullable=True, server_default="5"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.CheckConstraint("current_highest_bid >= starting_price", name="chk_bid_gte_starting"),
