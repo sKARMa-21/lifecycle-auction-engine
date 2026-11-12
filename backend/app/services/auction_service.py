@@ -2,12 +2,83 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.auction import Auction, Bid, AuctionStatus
+from app.models.bicycle import Bicycle, CycleState
+from app.models.user import User, UserRole
 from app.schemas.auction import AuctionCreate, BidCreate
 
 
 class AuctionService:
     @staticmethod
     def create_auction(db: Session, data: AuctionCreate) -> Auction:
+        # 1. Verify bicycle exists
+        bicycle = db.get(Bicycle, data.bicycle_id)
+        if not bicycle:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Bicycle with ID {data.bicycle_id} not found.",
+            )
+
+        # 2. Gate by lifecycle state machine: cycle must be AUCTIONABLE
+        is_auctionable = (
+            bicycle.current_state == CycleState.AUCTIONABLE
+            or bicycle.status == CycleState.AUCTIONABLE.value
+        )
+        if not is_auctionable:
+            curr_status = bicycle.status or (bicycle.current_state.value if bicycle.current_state else "unknown")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Cannot launch auction: Bicycle #{bicycle.id} is currently in '{curr_status}' state. "
+                    f"Only bicycles in '{CycleState.AUCTIONABLE.value}' state can be put up for auction."
+                ),
+            )
+
+        # 3. Verify creator exists and has authority (cycle owner or admin)
+        creator = db.get(User, data.created_by_id)
+        if not creator:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID {data.created_by_id} not found.",
+            )
+
+        is_admin = creator.role in (UserRole.ADMIN, "admin")
+        is_owner = (
+            (bicycle.owner_id is not None and bicycle.owner_id == creator.id)
+            or (bicycle.current_owner_id is not None and bicycle.current_owner_id == creator.id)
+        )
+        if not (is_admin or is_owner):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the registered bicycle owner or an administrator can launch an auction for this bicycle.",
+            )
+
+        # 4. Check for active/ongoing auctions for this bicycle
+        existing_auction = (
+            db.query(Auction)
+            .filter(
+                Auction.bicycle_id == data.bicycle_id,
+                Auction.status.in_([AuctionStatus.ACTIVE, AuctionStatus.EXTENDED, AuctionStatus.SCHEDULED]),
+            )
+            .first()
+        )
+        if existing_auction:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"An active auction (#{existing_auction.id}) already exists for bicycle #{data.bicycle_id}.",
+            )
+
+        # 5. Validate end time is in the future
+        now = datetime.now(timezone.utc)
+        ends_at = data.ends_at
+        if ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+
+        if ends_at <= now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Auction end date must be in the future.",
+            )
+
         auction = Auction(
             bicycle_id=data.bicycle_id,
             created_by_id=data.created_by_id,
@@ -15,7 +86,7 @@ class AuctionService:
             starting_price=data.starting_price,
             current_highest_bid=data.starting_price,
             min_bid_increment=data.min_bid_increment,
-            ends_at=data.ends_at,
+            ends_at=ends_at,
             anti_snipe_trigger_window=data.anti_snipe_trigger_window,
             anti_snipe_extension_minutes=data.anti_snipe_extension_minutes,
             status=AuctionStatus.ACTIVE,
