@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.bicycle import Bicycle
+from app.models.lifecycle import LifecycleEvent
 from app.models.user import User
 from app.schemas.bicycle import (
     BicycleCreate,
@@ -13,6 +14,7 @@ from app.schemas.bicycle import (
     TransferOwnershipRequest,
 )
 from app.schemas.lifecycle import (
+    LifecycleEventRead,
     MarkAuctionableRequest,
     MarkSoldRequest,
     ReclaimRequest,
@@ -142,7 +144,14 @@ def tag_as_asset(
     bicycle = get_bicycle_or_404(bicycle_id, db)
     actor = get_user_or_404(payload.actor_id, db)
 
-    updated_bike = BicycleLifecycleService.tag_as_asset(bicycle, actor)
+    updated_bike = BicycleLifecycleService.tag_as_asset(
+        bicycle=bicycle,
+        actor=actor,
+        location=payload.location,
+        notes=payload.notes,
+        proof_image_url=payload.proof_image_url,
+        db=db,
+    )
     db.commit()
     db.refresh(updated_bike)
     return updated_bike
@@ -158,7 +167,12 @@ def set_auctionable(
     bicycle = get_bicycle_or_404(bicycle_id, db)
     actor = get_user_or_404(payload.actor_id, db)
 
-    updated_bike = BicycleLifecycleService.mark_as_auctionable_by_owner(bicycle, actor)
+    updated_bike = BicycleLifecycleService.mark_as_auctionable_by_owner(
+        bicycle=bicycle,
+        actor=actor,
+        notes=payload.notes,
+        db=db,
+    )
     db.commit()
     db.refresh(updated_bike)
     return updated_bike
@@ -174,7 +188,12 @@ def reclaim_bicycle(
     bicycle = get_bicycle_or_404(bicycle_id, db)
     actor = get_user_or_404(payload.actor_id, db)
 
-    updated_bike = BicycleLifecycleService.reclaim_bicycle(bicycle, actor)
+    updated_bike = BicycleLifecycleService.reclaim_bicycle(
+        bicycle=bicycle,
+        actor=actor,
+        notes=payload.notes,
+        db=db,
+    )
     db.commit()
     db.refresh(updated_bike)
     return updated_bike
@@ -188,7 +207,10 @@ def promote_auctionable(
     """Promotes an ASSET cycle to AUCTIONABLE after the 30-day grace period has passed."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
 
-    updated_bike = BicycleLifecycleService.promote_asset_to_auctionable(bicycle)
+    updated_bike = BicycleLifecycleService.promote_asset_to_auctionable(
+        bicycle=bicycle,
+        db=db,
+    )
     db.commit()
     db.refresh(updated_bike)
     return updated_bike
@@ -208,15 +230,34 @@ def mark_sold(
 ):
     """Finalizes cycle state from AUCTIONABLE to SOLD and records sale analytics."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
+    actor = get_user_or_404(payload.actor_id, db) if payload.actor_id else None
 
     updated_bike = BicycleLifecycleService.mark_as_sold(
         bicycle=bicycle,
+        actor=actor,
         cycle_condition=payload.cycle_condition,
         market_value=payload.market_value,
         years_used=payload.years_used,
         base_price_set=payload.base_price_set,
         sold_price=payload.sold_price,
+        notes=payload.notes,
+        db=db,
     )
     db.commit()
     db.refresh(updated_bike)
     return updated_bike
+
+
+@router.get("/{bicycle_id}/events", response_model=List[LifecycleEventRead])
+def get_lifecycle_events(
+    bicycle_id: int,
+    db: Session = Depends(get_db),
+):
+    """Retrieve full audit history / lifecycle events for a bicycle."""
+    get_bicycle_or_404(bicycle_id, db)
+    stmt = (
+        select(LifecycleEvent)
+        .where(LifecycleEvent.bicycle_id == bicycle_id)
+        .order_by(LifecycleEvent.created_at.asc())
+    )
+    return list(db.scalars(stmt).all())
