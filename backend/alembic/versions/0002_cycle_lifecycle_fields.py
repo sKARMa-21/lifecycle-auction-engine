@@ -1,6 +1,6 @@
 """Combined schema for campus cycle lifecycle, student fields, QR stickers, and auction engine
 
-Revision ID: 0002_cycle_lifecycle_fields
+Revision ID: 0002_lifecycle_auction_v2
 Revises: 0001_initial_schema
 Create Date: 2026-11-05
 

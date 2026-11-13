@@ -25,3 +25,8 @@ frontend/dist/
 .coverage
 htmlcov/
 *.log
+
+# Local documentation
+LOCAL_README.md
+README_LOCAL.md
+README.local.md
