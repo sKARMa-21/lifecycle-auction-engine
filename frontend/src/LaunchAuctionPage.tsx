@@ -170,7 +170,7 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
 
           <div className="btn-row" style={{ marginTop: '8px' }}>
             <button type="submit" className="btn-submit">
-              🚀 Launch Auction
+              Launch Auction
             </button>
             <Link to="/dashboard" className="btn-secondary" style={{ textDecoration: 'none' }}>
               Cancel

@@ -128,7 +128,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
 
         <div className="policy-grid">
           <div className="policy-item">
-            <div className="policy-icon">🛡️</div>
+            <div className="policy-icon"></div>
             <div>
               <strong>Degree Duration Protection</strong>
               <p>
@@ -138,7 +138,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
           </div>
 
           <div className="policy-item">
-            <div className="policy-icon">⏳</div>
+            <div className="policy-icon"></div>
             <div>
               <strong>30-Day Statutory Grace Period</strong>
               <p>
@@ -148,7 +148,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
           </div>
 
           <div className="policy-item">
-            <div className="policy-icon">⚡</div>
+            <div className="policy-icon"></div>
             <div>
               <strong>Anti-Sniping Auction Bidding</strong>
               <p>
@@ -158,7 +158,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
           </div>
 
           <div className="policy-item">
-            <div className="policy-icon">🔒</div>
+            <div className="policy-icon"></div>
             <div>
               <strong>Pessimistic Concurrency Locking</strong>
               <p>

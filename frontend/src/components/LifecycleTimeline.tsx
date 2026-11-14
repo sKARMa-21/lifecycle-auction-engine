@@ -66,7 +66,7 @@ export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
       {bicycle.status === 'asset' && (
         <div className={`grace-box ${graceExpired ? 'grace-expired' : 'grace-active'}`}>
           <div className="grace-title">
-            {graceExpired ? '⏱️ 30-Day Grace Period Has Expired' : '⏱️ 30-Day Grace Period in Progress'}
+            {graceExpired ? '30-Day Grace Period Has Expired' : '30-Day Grace Period in Progress'}
           </div>
           <div className="grace-text">
             {graceExpired ? (
@@ -87,7 +87,7 @@ export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
 
       {bicycle.status === 'sold' && (
         <div className="sold-summary-box">
-          <div className="sold-title">🎉 Lifecycle Complete — Cycle Sold</div>
+          <div className="sold-title">Lifecycle Complete — Cycle Sold</div>
           <div className="sold-grid">
             {bicycle.sold_price !== null && bicycle.sold_price !== undefined && (
               <div>

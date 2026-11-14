@@ -124,7 +124,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
               onClick={loadAuctions}
               disabled={loading}
             >
-              🔄 Refresh
+              Refresh
             </button>
           </div>
         </div>
@@ -157,7 +157,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
                   <div className="auction-top">
                     <h4>{auction.title}</h4>
                     <span className={`status-badge status-${auction.status}`}>
-                      {isExtended ? '⚡ EXTENDED' : auction.status.toUpperCase()}
+                      {isExtended ? 'EXTENDED' : auction.status.toUpperCase()}
                     </span>
                   </div>
 
@@ -179,7 +179,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
 
                   {isWinner && (
                     <div className="winner-tag">
-                      🎯 You currently hold the highest bid!
+                      You currently hold the highest bid.
                     </div>
                   )}
 

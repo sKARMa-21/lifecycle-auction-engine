@@ -380,7 +380,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
               <div className="owner-email">{owner.email} ({owner.role})</div>
               {owner.degree_type && (
                 <div className="owner-degree">
-                  🎓 Enrolled: {owner.degree_type} ({owner.enrollment_year || 'N/A'} - Duration: {owner.degree_duration_years || 'N/A'} yrs)
+                  Enrolled: {owner.degree_type} ({owner.enrollment_year || 'N/A'} - Duration: {owner.degree_duration_years || 'N/A'} yrs)
                 </div>
               )}
               {isOwner && <span className="tag-you">You are the registered owner</span>}
