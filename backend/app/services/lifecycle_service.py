@@ -15,13 +15,13 @@ from app.models.lifecycle import LifecycleEvent
 from app.models.user import User
 
 class BicycleLifecycleService:
-    AUTHORITY_ROLES = {"guard", "admin"}
+    AUTHORITY_ROLES = {"guard", "admin", "super_admin"}
     DEFAULT_GRACE_PERIOD_DAYS = 30
 
     @staticmethod
     def _is_owner_or_admin(bicycle: Bicycle, actor: User) -> bool:
         """Helper to verify if the actor owns the cycle or is an administrator."""
-        return (bicycle.owner_id is not None and bicycle.owner_id == actor.id) or actor.role == "admin"
+        return (bicycle.owner_id is not None and bicycle.owner_id == actor.id) or actor.role in ("admin", "super_admin")
 
     @staticmethod
     def _record_event(

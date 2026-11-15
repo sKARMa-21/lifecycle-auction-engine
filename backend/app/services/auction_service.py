@@ -41,7 +41,7 @@ class AuctionService:
                 detail=f"User with ID {data.created_by_id} not found.",
             )
 
-        is_admin = creator.role in (UserRole.ADMIN, "admin")
+        is_admin = creator.role in (UserRole.ADMIN, "admin", UserRole.SUPER_ADMIN, "super_admin")
         is_owner = (
             (bicycle.owner_id is not None and bicycle.owner_id == creator.id)
             or (bicycle.current_owner_id is not None and bicycle.current_owner_id == creator.id)

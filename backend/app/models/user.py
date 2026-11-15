@@ -13,9 +13,10 @@ if TYPE_CHECKING:
 
 
 class UserRole(str, Enum):
+    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
-    STUDENT = "student"
     GUARD = "guard"
+    STUDENT = "student"
 
 
 class User(Base):

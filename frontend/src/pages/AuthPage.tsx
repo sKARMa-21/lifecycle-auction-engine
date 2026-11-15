@@ -94,7 +94,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
               disabled={loading}
             />
             <span className="field-hint">
-              Tip: Emails starting with <code>admin</code> gain Admin privileges.
+              Students self-register with LDAP/campus email. Staff roles are provisioned by Super Admin.
             </span>
           </div>
 

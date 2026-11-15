@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,11 +12,45 @@ from app.core.exceptions import (
     UnauthorizedTransitionError,
 )
 from app.api.v1 import api_router
+from app.core.config import settings
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Ensure initial Super Admin is bootstrapped
+    try:
+        from app.db.session import SessionLocal
+        from app.models.user import User, UserRole
+        from app.core.security import hash_password
+        from sqlalchemy import select
+
+        with SessionLocal() as db:
+            existing_sa = db.scalar(select(User).where(User.role == UserRole.SUPER_ADMIN))
+            if not existing_sa:
+                user_by_email = db.scalar(select(User).where(User.email == settings.first_super_admin_email))
+                if user_by_email:
+                    user_by_email.role = UserRole.SUPER_ADMIN
+                    db.commit()
+                else:
+                    sa_user = User(
+                        full_name="System Super Admin",
+                        email=settings.first_super_admin_email,
+                        password_hash=hash_password(settings.first_super_admin_password),
+                        role=UserRole.SUPER_ADMIN,
+                        is_active=True,
+                    )
+                    db.add(sa_user)
+                    db.commit()
+    except Exception as e:
+        print(f"Super Admin bootstrap notice: {e}")
+    yield
+
 
 app = FastAPI(
     title="Lifecycle & Auction Engine",
     description="Campus bicycle lifecycle management and auction API.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
