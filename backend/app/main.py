@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import (
+    AuctionNoActiveBidsError,
     DegreeDurationActiveError,
     GracePeriodNotExpiredError,
     InvalidStateTransitionError,
+    LifecycleDomainError,
     UnauthorizedTransitionError,
 )
 from app.api.v1 import api_router
@@ -46,6 +48,16 @@ async def unauthorized_transition_handler(request: Request, exc: UnauthorizedTra
 @app.exception_handler(DegreeDurationActiveError)
 async def degree_duration_handler(request: Request, exc: DegreeDurationActiveError):
     return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+
+@app.exception_handler(AuctionNoActiveBidsError)
+async def auction_no_bids_handler(request: Request, exc: AuctionNoActiveBidsError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(LifecycleDomainError)
+async def lifecycle_domain_handler(request: Request, exc: LifecycleDomainError):
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 @app.get("/", tags=["General"])

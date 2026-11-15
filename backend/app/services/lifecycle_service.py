@@ -14,7 +14,6 @@ from app.models.bicycle import Bicycle, BicycleStatus, CycleState
 from app.models.lifecycle import LifecycleEvent
 from app.models.user import User
 
-
 class BicycleLifecycleService:
     AUTHORITY_ROLES = {"guard", "admin"}
     DEFAULT_GRACE_PERIOD_DAYS = 30
@@ -285,6 +284,48 @@ class BicycleLifecycleService:
             to_state=CycleState.SOLD,
             actor_id=actor.id if actor else None,
             notes=notes or f"Marked as sold. Final sold price: {sold_price}",
+            db=db,
+        )
+        return bicycle
+
+    @classmethod
+    def mark_as_dead(
+        cls,
+        bicycle: Bicycle,
+        actor: User,
+        reason: Optional[str] = None,
+        db: Optional[Session] = None,
+    ) -> Bicycle:
+        """Permanently retires a bicycle into the DEAD state.
+
+        Only admins can retire a bicycle. A bicycle can be retired from any
+        non-terminal state (ACTIVE, ASSET, AUCTIONABLE) — e.g. it was destroyed,
+        stolen with no recovery, or scrapped. SOLD and DEAD cycles cannot be retired
+        again.
+        """
+        terminal_states = {CycleState.SOLD.value, CycleState.DEAD.value}
+        if bicycle.status in terminal_states:
+            raise InvalidStateTransitionError(
+                f"Cannot retire bicycle: it is already in a terminal state '{bicycle.status}'."
+            )
+
+        if actor.role != "admin":
+            raise UnauthorizedTransitionError(
+                "Only an administrator can permanently retire a bicycle."
+            )
+
+        from_state = bicycle.current_state or CycleState(bicycle.status)
+        bicycle.status = CycleState.DEAD.value
+        bicycle.current_state = CycleState.DEAD
+        # Clear ownership and clear grace period timer — it's retired
+        bicycle.asset_tagged_at = None
+
+        cls._record_event(
+            bicycle=bicycle,
+            from_state=from_state,
+            to_state=CycleState.DEAD,
+            actor_id=actor.id,
+            notes=reason or "Bicycle permanently retired by administrator",
             db=db,
         )
         return bicycle

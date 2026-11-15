@@ -31,6 +31,11 @@ class MarkSoldRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class MarkDeadRequest(BaseModel):
+    actor_id: int
+    reason: Optional[str] = None
+
+
 class LifecycleEventRead(BaseModel):
     id: int
     bicycle_id: int
@@ -43,3 +48,4 @@ class LifecycleEventRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+

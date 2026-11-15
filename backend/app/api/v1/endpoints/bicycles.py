@@ -16,6 +16,7 @@ from app.schemas.bicycle import (
 from app.schemas.lifecycle import (
     LifecycleEventRead,
     MarkAuctionableRequest,
+    MarkDeadRequest,
     MarkSoldRequest,
     ReclaimRequest,
     TagAssetRequest,
@@ -241,6 +242,27 @@ def mark_sold(
         base_price_set=payload.base_price_set,
         sold_price=payload.sold_price,
         notes=payload.notes,
+        db=db,
+    )
+    db.commit()
+    db.refresh(updated_bike)
+    return updated_bike
+
+
+@router.post("/{bicycle_id}/mark-dead", response_model=BicycleRead)
+def mark_dead(
+    bicycle_id: int,
+    payload: MarkDeadRequest,
+    db: Session = Depends(get_db),
+):
+    """Admin permanently retires a bicycle into the DEAD state (scrapped, destroyed, or unrecoverable)."""
+    bicycle = get_bicycle_or_404(bicycle_id, db)
+    actor = get_user_or_404(payload.actor_id, db)
+
+    updated_bike = BicycleLifecycleService.mark_as_dead(
+        bicycle=bicycle,
+        actor=actor,
+        reason=payload.reason,
         db=db,
     )
     db.commit()
