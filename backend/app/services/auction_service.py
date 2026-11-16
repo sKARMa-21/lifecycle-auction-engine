@@ -6,6 +6,7 @@ from app.models.bicycle import Bicycle, CycleState
 from app.models.user import User, UserRole
 from app.schemas.auction import AuctionCreate, BidCreate
 from app.services.lifecycle_service import BicycleLifecycleService
+from app.core.redis import publish_auction_event
 
 
 class AuctionService:
@@ -190,16 +191,29 @@ class AuctionService:
         auction.current_highest_bid = bid_in.amount
         auction.current_winner_id = bid_in.bidder_id
 
-        # Anti-sniping dynamic extension:
+        is_extended = False
         time_left = auction.ends_at - now
         threshold = timedelta(minutes=auction.anti_snipe_trigger_window)
         if time_left < threshold:
             auction.ends_at = auction.ends_at + timedelta(minutes=auction.anti_snipe_extension_minutes)
             auction.extension_count = (auction.extension_count or 0) + 1
             auction.status = AuctionStatus.EXTENDED
+            is_extended = True
 
         db.commit()
         db.refresh(new_bid)
+
+        publish_auction_event(
+            auction.id,
+            {
+                "type": "NEW_BID",
+                "bidder_id": new_bid.bidder_id,
+                "amount": float(new_bid.amount),
+                "ends_at": auction.ends_at.isoformat(),
+                "extended": is_extended,
+            },
+        )
+
         return new_bid
 
     @staticmethod

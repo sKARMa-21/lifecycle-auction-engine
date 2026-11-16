@@ -49,3 +49,11 @@ class AuctionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class AuctionBidEvent(BaseModel):
+    type: str = "NEW_BID"
+    bidder_id: int
+    amount: float
+    ends_at: datetime
+    extended: bool
+
