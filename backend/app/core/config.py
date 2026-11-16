@@ -7,6 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 class Settings(BaseSettings):
     database_url: str
+    redis_url: str = "redis://127.0.0.1:6379/0"
     first_super_admin_email: str = "superadmin@campus.edu"
     first_super_admin_password: str = "superadmin123"
 
