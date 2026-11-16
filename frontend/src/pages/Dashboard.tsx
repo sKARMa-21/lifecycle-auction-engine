@@ -14,7 +14,6 @@ interface DashboardProps {
 interface RoleConfig {
   badge: string
   title: string
-  description: string
   canLaunchAuction: boolean
   canManageStaff: boolean
   bicyclesNavLabel: string
@@ -25,47 +24,43 @@ interface RoleConfig {
 
 const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
   super_admin: {
-    badge: 'Super Admin Console',
-    title: 'Super Admin Governance & Account Administration',
-    description: 'System-wide governance: provision operational roles, oversee bicycle lifecycles, and audit campus auctions.',
+    badge: 'Super Admin',
+    title: 'Dashboard',
     canLaunchAuction: true,
     canManageStaff: true,
     bicyclesNavLabel: 'Fleet Registry',
     showAuctionsNav: true,
     primaryAction: { label: 'Fleet Registry →', to: '/bicycles' },
-    secondaryAction: { label: 'Live Auctions →', to: '/auctions' },
+    secondaryAction: { label: 'Auction Pool →', to: '/auctions' },
   },
   admin: {
-    badge: 'Operations & Auction Admin',
-    title: 'Campus Operations & Auction Dashboard',
-    description: 'Manage bicycle lifecycles, monitor 30-day grace periods, and publish eligible cycles to the public auction floor.',
+    badge: 'Admin',
+    title: 'Dashboard',
     canLaunchAuction: true,
     canManageStaff: false,
     bicyclesNavLabel: 'Fleet Registry',
     showAuctionsNav: true,
     primaryAction: { label: 'Fleet Registry →', to: '/bicycles' },
-    secondaryAction: { label: 'Live Auctions →', to: '/auctions' },
+    secondaryAction: { label: 'Auction Pool →', to: '/auctions' },
   },
   guard: {
-    badge: 'Guard Inspection Portal',
-    title: 'Campus Security & Cycle Inspection Portal',
-    description: 'Inspect parked bicycles, verify registered QR stickers, and report abandoned assets for statutory grace periods.',
+    badge: 'Guard',
+    title: 'Dashboard',
     canLaunchAuction: false,
     canManageStaff: false,
     bicyclesNavLabel: 'Inspect Bicycles',
     showAuctionsNav: false,
-    primaryAction: { label: 'Inspect Fleet Registry →', to: '/bicycles' },
+    primaryAction: { label: 'Inspect Bicycles →', to: '/bicycles' },
   },
   student: {
-    badge: 'Student Cycle & Bidding Portal',
-    title: 'Student Bicycle & Live Auction Floor',
-    description: 'Register and manage your campus bicycles, reclaim flagged assets during the 30-day grace period, and bid in real-time auctions.',
+    badge: 'Student',
+    title: 'Dashboard',
     canLaunchAuction: false,
     canManageStaff: false,
     bicyclesNavLabel: 'My Bicycles',
     showAuctionsNav: true,
-    primaryAction: { label: 'My Registered Bicycles →', to: '/bicycles' },
-    secondaryAction: { label: 'Browse Live Auctions →', to: '/auctions' },
+    primaryAction: { label: 'My Bicycles →', to: '/bicycles' },
+    secondaryAction: { label: 'Auction Pool →', to: '/auctions' },
   },
 }
 
@@ -73,6 +68,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   const [bicycles, setBicycles] = useState<Bicycle[]>([])
   const [auctions, setAuctions] = useState<Auction[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   // Super Admin Staff Provisioning state
   const [showStaffForm, setShowStaffForm] = useState(false)
@@ -87,17 +83,29 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   const config = ROLE_CONFIGS[currentRole] || ROLE_CONFIGS.student
 
   useEffect(() => {
+    let cancelled = false
     Promise.all([
-      fetch(`${API}/bicycles/`).then((r) => (r.ok ? r.json() : [])),
-      fetch(`${API}/auctions/`).then((r) => (r.ok ? r.json() : [])),
+      fetch(`${API}/bicycles/`, {
+        headers: { 'X-User-Id': String(user.id) },
+      }).then((r) => {
+        if (!r.ok) throw new Error('Could not load dashboard data.')
+        return r.json()
+      }),
+      fetch(`${API}/auctions/`).then((r) => {
+        if (!r.ok) throw new Error('Could not load dashboard data.')
+        return r.json()
+      }),
     ])
       .then(([b, a]) => {
+        if (cancelled) return
+        setLoadError('')
         setBicycles(Array.isArray(b) ? b : [])
-        setAuctions(Array.isArray(a) ? a : [])
+        setAuctions(Array.isArray(a) ? a.filter((auction: Auction) => new Date(auction.ends_at).getTime() > Date.now()) : [])
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+      .catch(() => { if (!cancelled) setLoadError('Could not load dashboard data.') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [user.id])
 
   const activeCount = bicycles.filter((b) => b.status === 'active').length
   const assetCount = bicycles.filter((b) => b.status === 'asset').length
@@ -154,7 +162,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
           </Link>
           {config.showAuctionsNav && (
             <Link to="/auctions" className="btn-toggle">
-              Auctions
+              Auction Pool
             </Link>
           )}
           {config.canLaunchAuction && (
@@ -173,13 +181,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         <div className="welcome-flex">
           <div>
             <h3>Welcome, {user.full_name}</h3>
-            <p className="subtitle">
-              Logged in as <strong>{user.email}</strong> &bull; Role:{' '}
-              <span className="role-pill" style={{ marginLeft: 6 }}>{user.role}</span>
-            </p>
-            <p style={{ fontSize: '0.88rem', color: 'var(--text)', marginTop: '8px' }}>
-              {config.description}
-            </p>
           </div>
           <div className="welcome-actions">
             <Link to={config.primaryAction.to} className="btn-submit btn-sm" style={{ textDecoration: 'none', textAlign: 'center' }}>
@@ -202,7 +203,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                 onClick={() => setShowStaffForm(!showStaffForm)}
                 style={{ textAlign: 'center' }}
               >
-                {showStaffForm ? 'Hide Staff Form' : '+ Provision Staff'}
+                {showStaffForm ? 'Hide Staff Form' : '+ Add Staff'}
               </button>
             )}
           </div>
@@ -212,8 +213,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       {/* Super Admin Staff Provisioning Section (Minimal & Collapsible) */}
       {config.canManageStaff && showStaffForm && (
         <div className="card-wide" style={{ marginTop: '16px' }}>
-          <h3>Provision Operational Staff Account</h3>
-          <p className="subtitle">Create and authorize Admin or Guard accounts directly into the system.</p>
+          <h3>Add Staff</h3>
 
           {staffStatusMsg && (
             <div className={`alert ${staffStatusMsg.error ? 'alert-error' : 'alert-success'}`}>
@@ -269,7 +269,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             </div>
             <div>
               <button type="submit" className="btn-submit" disabled={staffLoading} style={{ width: '100%' }}>
-                {staffLoading ? 'Provisioning...' : 'Create Account'}
+                {staffLoading ? 'Creating...' : 'Create Account'}
               </button>
             </div>
           </form>
@@ -277,86 +277,34 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       )}
 
       {/* KPI Stats Grid */}
+      {loadError && <div className="alert alert-error" role="alert">{loadError}</div>}
       <div className="kpi-grid">
-        <div className="kpi-card">
-          <span className="kpi-label">Active Campus Cycles</span>
-          <span className="kpi-num status-text-active">{loading ? '...' : activeCount}</span>
-          <span className="kpi-sub">Registered with students or campus</span>
-        </div>
+        <Link to="/bicycles" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <span className="kpi-label">Active Bicycles</span>
+          <span className="kpi-num status-text-active">{loading ? '...' : loadError ? '—' : activeCount}</span>
+        </Link>
 
-        <div className="kpi-card">
-          <span className="kpi-label">In Grace Period (Asset)</span>
-          <span className="kpi-num status-text-asset">{loading ? '...' : assetCount}</span>
-          <span className="kpi-sub">Impounded, awaiting 30d reclamation</span>
-        </div>
+        <Link to="/bicycles" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <span className="kpi-label">Awaiting Claim</span>
+          <span className="kpi-num status-text-asset">{loading ? '...' : loadError ? '—' : assetCount}</span>
+        </Link>
 
-        <div className="kpi-card">
-          <span className="kpi-label">Auctionable Pool</span>
-          <span className="kpi-num status-text-auctionable">{loading ? '...' : auctionableCount}</span>
-          <span className="kpi-sub">Eligible for public student auction</span>
-        </div>
+        <Link to={config.canLaunchAuction ? '/launch-auction' : '/bicycles'} className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <span className="kpi-label">Ready for Auction</span>
+          <span className="kpi-num status-text-auctionable">{loading ? '...' : loadError ? '—' : auctionableCount}</span>
+        </Link>
 
-        <div className="kpi-card">
-          <span className="kpi-label">Active Auctions</span>
-          <span className="kpi-num status-text-extended">{loading ? '...' : auctions.length}</span>
-          <span className="kpi-sub">Anti-sniping bidding active</span>
-        </div>
+        {config.showAuctionsNav && (
+          <Link to="/auctions" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <span className="kpi-label">Auction Pool</span>
+            <span className="kpi-num status-text-extended">{loading ? '...' : loadError ? '—' : auctions.length}</span>
+          </Link>
+        )}
 
-        <div className="kpi-card">
-          <span className="kpi-label">Completed / Sold</span>
-          <span className="kpi-num status-text-sold">{loading ? '...' : soldCount}</span>
-          <span className="kpi-sub">Archived and transferred to new owners</span>
-        </div>
-      </div>
-
-      {/* Lifecycle Rules & Policies Explainer */}
-      <div className="card-wide">
-        <h3>Campus Bicycle Lifecycle Rules Engine</h3>
-        <p className="subtitle">
-          All state transitions are strictly governed by automated campus policies:
-        </p>
-
-        <div className="policy-grid">
-          <div className="policy-item">
-            <div className="policy-icon"></div>
-            <div>
-              <strong>Degree Duration Protection</strong>
-              <p>
-                Guards and authorities cannot impound bicycles belonging to students actively enrolled in their degree program. The engine strictly blocks unauthorized asset tagging.
-              </p>
-            </div>
-          </div>
-
-          <div className="policy-item">
-            <div className="policy-icon"></div>
-            <div>
-              <strong>30-Day Statutory Grace Period</strong>
-              <p>
-                Once an abandoned cycle is tagged as ASSET, a 30-day countdown starts. The registered student owner can reclaim it at any point during this window.
-              </p>
-            </div>
-          </div>
-
-          <div className="policy-item">
-            <div className="policy-icon"></div>
-            <div>
-              <strong>Anti-Sniping Auction Bidding</strong>
-              <p>
-                Bids placed within the final 5 minutes of an auction automatically extend the deadline by 5 minutes, preventing last-second sniping and ensuring fair pricing.
-              </p>
-            </div>
-          </div>
-
-          <div className="policy-item">
-            <div className="policy-icon"></div>
-            <div>
-              <strong>Role-Based Access Control</strong>
-              <p>
-                Super Admins govern accounts, Admins manage auctions and lifecycle disputes, Guards inspect QR codes and tag abandoned assets, and Students participate in bidding and fleet ownership.
-              </p>
-            </div>
-          </div>
-        </div>
+        <Link to="/bicycles" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <span className="kpi-label">Sold</span>
+          <span className="kpi-num status-text-sold">{loading ? '...' : loadError ? '—' : soldCount}</span>
+        </Link>
       </div>
     </div>
   )

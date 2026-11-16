@@ -5,6 +5,7 @@ from app.models.auction import Auction, Bid, AuctionStatus
 from app.models.bicycle import Bicycle, CycleState
 from app.models.user import User, UserRole
 from app.schemas.auction import AuctionCreate, BidCreate
+from app.services.lifecycle_service import BicycleLifecycleService
 
 
 class AuctionService:
@@ -17,6 +18,30 @@ class AuctionService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Bicycle with ID {data.bicycle_id} not found.",
             )
+
+        # Serialize setup for the same bicycle, including duplicate-auction checks.
+        bicycle = db.query(Bicycle).filter(Bicycle.id == data.bicycle_id).with_for_update().one()
+        creator = db.get(User, data.created_by_id)
+        if not creator:
+            raise HTTPException(status_code=404, detail="User not found")
+        owner_id = bicycle.current_owner_id or bicycle.owner_id
+        is_student_owner = creator.role == UserRole.STUDENT and owner_id == creator.id
+        is_admin_creator = creator.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+        if bicycle.status == "active" and not (is_student_owner or (is_admin_creator and owner_id is None)):
+            raise HTTPException(status_code=403, detail="Administrators cannot auction a bicycle currently in use by its owner.")
+        if creator.role == UserRole.GUARD or (not is_student_owner and not is_admin_creator):
+            raise HTTPException(status_code=403, detail="Only the student owner or an administrator can create an auction.")
+
+        # An owner's voluntary sale and an unowned campus asset can be configured directly.
+        if bicycle.status == "active":
+            BicycleLifecycleService.mark_as_auctionable_by_owner(bicycle, creator, db=db)
+        elif bicycle.status == "dead" and is_admin_creator and owner_id is None:
+            bicycle.status = "auctionable"
+            bicycle.current_state = CycleState.AUCTIONABLE
+            BicycleLifecycleService._record_event(bicycle, CycleState.DEAD, CycleState.AUCTIONABLE,
+                                                  actor_id=creator.id, notes="Unowned scrap offered for auction", db=db)
+        elif bicycle.status == "asset" and is_admin_creator:
+            BicycleLifecycleService.promote_asset_to_auctionable(bicycle, actor=creator, db=db)
 
         # 2. Gate by lifecycle state machine: cycle must be AUCTIONABLE
         is_auctionable = (
@@ -79,6 +104,12 @@ class AuctionService:
                 detail="Auction end date must be in the future.",
             )
 
+        starts_at = data.starts_at
+        if starts_at.tzinfo is None:
+            starts_at = starts_at.replace(tzinfo=timezone.utc)
+        if starts_at < now or ends_at <= starts_at:
+            raise HTTPException(status_code=400, detail="Choose a future start time and an end time after it.")
+
         auction = Auction(
             bicycle_id=data.bicycle_id,
             created_by_id=data.created_by_id,
@@ -86,10 +117,11 @@ class AuctionService:
             starting_price=data.starting_price,
             current_highest_bid=data.starting_price,
             min_bid_increment=data.min_bid_increment,
+            starts_at=starts_at,
             ends_at=ends_at,
             anti_snipe_trigger_window=data.anti_snipe_trigger_window,
             anti_snipe_extension_minutes=data.anti_snipe_extension_minutes,
-            status=AuctionStatus.ACTIVE,
+            status=AuctionStatus.SCHEDULED,
         )
         db.add(auction)
         db.commit()
@@ -132,6 +164,16 @@ class AuctionService:
                 detail=f"Bid amount too low. Minimum acceptable bid is {min_required_bid}"
             )
 
+        # Validate bidder exists and is strictly a student (Guards/Admins cannot own or bid on cycles)
+        bidder = db.get(User, bid_in.bidder_id)
+        if not bidder:
+            raise HTTPException(status_code=404, detail="Bidder not found")
+        if bidder.role not in (UserRole.STUDENT, "student"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only students are eligible to participate and place bids in cycle auctions. User with role '{bidder.role}' cannot bid.",
+            )
+
         if auction.current_winner_id == bid_in.bidder_id:
             raise HTTPException(status_code=400, detail="You are already the highest bidder")
 
@@ -171,7 +213,7 @@ class AuctionService:
     def list_active_auctions(db: Session, skip: int = 0, limit: int = 50):
         return (
             db.query(Auction)
-            .filter(Auction.status.in_([AuctionStatus.ACTIVE, AuctionStatus.EXTENDED]))
+            .filter(Auction.status.in_([AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED]))
             .offset(skip)
             .limit(limit)
             .all()

@@ -39,6 +39,14 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   }, [loadAuctions])
 
   const handlePlaceBid = async (auction: Auction) => {
+    if (user.role !== 'student') {
+      setMsg({
+        text: 'Only enrolled students can place bids in cycle auctions. Staff and Admins cannot own or bid on cycles.',
+        isError: true,
+      })
+      return
+    }
+
     const rawVal = bidAmounts[auction.id]
     const amount = Number(rawVal)
     const minRequired =
@@ -192,25 +200,31 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
                       Inspect Cycle #{auction.bicycle_id}
                     </Link>
 
-                    <div className="bid-inline-form">
-                      <input
-                        type="number"
-                        placeholder={`Min ₹${minRequired}`}
-                        value={bidAmounts[auction.id] || ''}
-                        onChange={(e) =>
-                          setBidAmounts({ ...bidAmounts, [auction.id]: e.target.value })
-                        }
-                        disabled={biddingId === auction.id}
-                      />
-                      <button
-                        type="button"
-                        className="btn-submit btn-sm"
-                        onClick={() => handlePlaceBid(auction)}
-                        disabled={biddingId === auction.id}
-                      >
-                        {biddingId === auction.id ? 'Bidding...' : 'Bid'}
-                      </button>
-                    </div>
+                    {user.role === 'student' ? (
+                      <div className="bid-inline-form">
+                        <input
+                          type="number"
+                          placeholder={`Min ₹${minRequired}`}
+                          value={bidAmounts[auction.id] || ''}
+                          onChange={(e) =>
+                            setBidAmounts({ ...bidAmounts, [auction.id]: e.target.value })
+                          }
+                          disabled={biddingId === auction.id}
+                        />
+                        <button
+                          type="button"
+                          className="btn-submit btn-sm"
+                          onClick={() => handlePlaceBid(auction)}
+                          disabled={biddingId === auction.id}
+                        >
+                          {biddingId === auction.id ? 'Bidding...' : 'Bid'}
+                        </button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', alignSelf: 'center' }}>
+                        Bidding reserved for students
+                      </span>
+                    )}
                   </div>
                 </div>
               )

@@ -31,10 +31,13 @@ class BicycleUpdate(BaseModel):
 
 class TransferOwnershipRequest(BaseModel):
     new_owner_id: Optional[int] = None
+    actor_id: Optional[int] = None
 
 
 class BicycleRead(BicycleBase):
     id: int
+    image_url: Optional[str] = None
+    current_owner_id: Optional[int] = None
     status: str
     owner_id: Optional[int] = None
     reported_by_id: Optional[int] = None

@@ -16,12 +16,12 @@ from app.models.user import User
 
 class BicycleLifecycleService:
     AUTHORITY_ROLES = {"guard", "admin", "super_admin"}
-    DEFAULT_GRACE_PERIOD_DAYS = 30
+    DEFAULT_GRACE_PERIOD_DAYS = 15
 
     @staticmethod
     def _is_owner_or_admin(bicycle: Bicycle, actor: User) -> bool:
         """Helper to verify if the actor owns the cycle or is an administrator."""
-        return (bicycle.owner_id is not None and bicycle.owner_id == actor.id) or actor.role in ("admin", "super_admin")
+        return (bicycle.current_owner_id or bicycle.owner_id) == actor.id or actor.role in ("admin", "super_admin")
 
     @staticmethod
     def _record_event(
@@ -60,11 +60,7 @@ class BicycleLifecycleService:
         proof_image_url: Optional[str] = None,
         db: Optional[Session] = None,
     ) -> Bicycle:
-        """Transitions a cycle from ACTIVE to ASSET.
-        
-        Only security guards, wardens, or admins can perform this.
-        BLOCKED if the student owner is still within active degree duration.
-        """
+        """Record neglect evidence and begin the owner's 15-day claim window."""
         if bicycle.status != BicycleStatus.ACTIVE.value:
             raise InvalidStateTransitionError(
                 f"Cannot tag as asset: Bicycle is currently in '{bicycle.status}' state, expected '{BicycleStatus.ACTIVE.value}'."
@@ -76,17 +72,8 @@ class BicycleLifecycleService:
             )
 
         now = current_time or datetime.now(timezone.utc)
-        current_year = now.year
-
-        # Check degree duration protection for student owners
-        if bicycle.owner and bicycle.owner.role == "student":
-            if bicycle.owner.is_degree_active(current_year):
-                grad_year = bicycle.owner.graduation_year or "unknown"
-                raise DegreeDurationActiveError(
-                    f"Protected by degree duration: Owner '{bicycle.owner.full_name}' is currently enrolled "
-                    f"in {bicycle.owner.degree_type or 'degree'} (enrolled: {bicycle.owner.enrollment_year}, expected graduation: {grad_year}). "
-                    f"Authorities cannot tag active student cycles as asset."
-                )
+        if not proof_image_url or not location or not notes:
+            raise InvalidStateTransitionError("A photo, location and condition notes are required to report neglect.")
 
         bicycle.status = BicycleStatus.ASSET.value
         bicycle.current_state = CycleState.ASSET
@@ -116,15 +103,16 @@ class BicycleLifecycleService:
     ) -> Bicycle:
         """Direct transition from ACTIVE to AUCTIONABLE.
         
-        Only permitted for the registered owner (student) or admin.
-        Authorities cannot use this to bypass the ASSET grace period.
+        Only the student owner or an admin handling an unowned bicycle may do this.
         """
         if bicycle.status != BicycleStatus.ACTIVE.value:
             raise InvalidStateTransitionError(
                 f"Cannot mark auctionable: Bicycle is currently in '{bicycle.status}', expected '{BicycleStatus.ACTIVE.value}'."
             )
 
-        if not cls._is_owner_or_admin(bicycle, actor):
+        owner_id = bicycle.current_owner_id or bicycle.owner_id
+        if not ((actor.role == "student" and owner_id == actor.id) or
+                (actor.role in ("admin", "super_admin") and owner_id is None)):
             raise UnauthorizedTransitionError(
                 "Only the registered cycle owner or an administrator can directly move an active cycle to auctionable."
             )
@@ -150,7 +138,7 @@ class BicycleLifecycleService:
         notes: Optional[str] = None,
         db: Optional[Session] = None,
     ) -> Bicycle:
-        """Owner claims cycle back during the 30-day grace period (ASSET -> ACTIVE)."""
+        """Owner claims cycle back during the 15-day grace period (ASSET -> ACTIVE)."""
         if bicycle.status != BicycleStatus.ASSET.value:
             raise InvalidStateTransitionError(
                 f"Cannot reclaim: Bicycle is in '{bicycle.status}' state, expected '{BicycleStatus.ASSET.value}'."
@@ -158,6 +146,10 @@ class BicycleLifecycleService:
 
         if not cls._is_owner_or_admin(bicycle, actor):
             raise UnauthorizedTransitionError("Only the owner or an admin can reclaim an impounded asset.")
+
+        tagged_at = bicycle.asset_tagged_at
+        if tagged_at and datetime.now(timezone.utc) >= tagged_at + timedelta(days=cls.DEFAULT_GRACE_PERIOD_DAYS):
+            raise GracePeriodNotExpiredError("The 15-day claim period has ended.")
 
         bicycle.status = BicycleStatus.ACTIVE.value
         bicycle.current_state = CycleState.ACTIVE
@@ -183,7 +175,9 @@ class BicycleLifecycleService:
         notes: Optional[str] = None,
         db: Optional[Session] = None,
     ) -> Bicycle:
-        """Promotes an ASSET to AUCTIONABLE once 30-day grace period expires."""
+        """Promotes a reported bicycle after its owner's 15-day claim window."""
+        if actor is not None and actor.role not in ("admin", "super_admin"):
+            raise UnauthorizedTransitionError("Only administrators can promote abandoned assets.")
         if bicycle.status != BicycleStatus.ASSET.value:
             raise InvalidStateTransitionError(
                 f"Cannot promote to auctionable: Bicycle is in '{bicycle.status}', expected '{BicycleStatus.ASSET.value}'."
@@ -195,7 +189,7 @@ class BicycleLifecycleService:
         now = current_time or datetime.now(timezone.utc)
         elapsed = now - bicycle.asset_tagged_at
 
-        if elapsed < timedelta(days=grace_period_days):
+        if (bicycle.current_owner_id or bicycle.owner_id) and elapsed < timedelta(days=grace_period_days):
             remaining_days = grace_period_days - elapsed.days
             raise GracePeriodNotExpiredError(
                 f"Grace period active: {remaining_days} days remaining before cycle can be transitioned to auctionable."
@@ -228,7 +222,7 @@ class BicycleLifecycleService:
         stmt = select(Bicycle).where(
             Bicycle.status == BicycleStatus.ASSET.value,
             Bicycle.asset_tagged_at <= cutoff,
-        )
+        ).with_for_update(skip_locked=True)
         expired_assets = list(db.scalars(stmt).all())
 
         for bike in expired_assets:

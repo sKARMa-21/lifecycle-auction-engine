@@ -1,14 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TagAssetRequest(BaseModel):
     actor_id: int
-    location: Optional[str] = None
-    notes: Optional[str] = None
-    proof_image_url: Optional[str] = None
+    location: str = Field(min_length=1, max_length=150)
+    notes: str = Field(min_length=1, max_length=5000)
+    proof_image_url: str = Field(min_length=1, max_length=4_200_000, pattern=r"^(https://|data:image/(jpeg|png|webp);base64,)")
 
 
 class MarkAuctionableRequest(BaseModel):

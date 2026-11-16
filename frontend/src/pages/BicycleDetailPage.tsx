@@ -45,7 +45,9 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       setLoading(true)
       const [resB, resU] = await Promise.all([
-        fetch(`${API}/bicycles/${id}`),
+        fetch(`${API}/bicycles/${id}`, {
+          headers: { 'X-User-Id': String(user.id) },
+        }),
         fetch(`${API}/auth/users`),
       ])
 
@@ -279,7 +281,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
 
   const owner = users.find((u) => u.id === bicycle.owner_id)
   const isOwner = user.id === bicycle.owner_id
-  const isAdmin = user.role === 'admin'
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   const isGuard = user.role === 'guard'
   const canTagAsAsset = (isAdmin || isGuard) && bicycle.status === 'active'
   const canReclaim = (isOwner || isAdmin) && bicycle.status === 'asset'

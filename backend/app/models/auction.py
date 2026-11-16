@@ -34,6 +34,7 @@ class Auction(Base):
     status = Column(SQLEnum(AuctionStatus, name="auction_status", values_callable=lambda x: [e.value for e in x]),
                     default=AuctionStatus.DRAFT, nullable=False)
 
+    starts_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now().astimezone())
     ends_at = Column(DateTime(timezone=True), nullable=False)
     payment_deadline = Column(DateTime(timezone=True), nullable=True)
     extension_count = Column(Integer, nullable=False, default=0)
@@ -67,3 +68,9 @@ class Bid(Base):
     __table_args__ = (
         CheckConstraint("amount > 0", name="bid_amount_positive"),
     )
+
+
+class AuctionParticipant(Base):
+    __tablename__ = "auction_participants"
+    auction_id = Column(Integer, ForeignKey("auctions.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)

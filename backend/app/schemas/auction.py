@@ -25,7 +25,8 @@ class AuctionCreate(BaseModel):
     created_by_id: int
     title: str
     starting_price: float = Field(..., ge=0)
-    min_bid_increment: float = 20.0
+    min_bid_increment: float = Field(default=50.0, gt=0)
+    starts_at: datetime
     ends_at: datetime
     anti_snipe_trigger_window: int = 5
     anti_snipe_extension_minutes: int = 5
@@ -40,6 +41,7 @@ class AuctionResponse(BaseModel):
     current_highest_bid: float
     current_winner_id: Optional[int]
     min_bid_increment: float
+    starts_at: datetime
     ends_at: datetime
     status: AuctionStatus
     created_at: datetime

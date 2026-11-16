@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import asyncio
+from contextlib import suppress
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -43,7 +45,14 @@ async def lifespan(app: FastAPI):
                     db.commit()
     except Exception as e:
         print(f"Super Admin bootstrap notice: {e}")
-    yield
+    from app.workers.asset_expiry import run_asset_expiry
+    expiry_task = asyncio.create_task(run_asset_expiry())
+    try:
+        yield
+    finally:
+        expiry_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await expiry_task
 
 
 app = FastAPI(
