@@ -40,6 +40,22 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     sold_price: 850,
   })
 
+  const [showTagAssetModal, setShowTagAssetModal] = useState(false)
+  const [tagAssetForm, setTagAssetForm] = useState({
+    location: '',
+    notes: '',
+    proof_image_url: '',
+  })
+
+  /** Parse FastAPI error detail — may be a string or a validation error array. */
+  const parseApiError = (detail: unknown): string => {
+    if (!detail) return 'Unknown error'
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail))
+      return detail.map((e: { msg?: string; loc?: string[] }) => e.msg || '').filter(Boolean).join(', ')
+    return JSON.stringify(detail)
+  }
+
   const fetchBicycle = useCallback(async () => {
     if (!id) return
     try {
@@ -83,8 +99,8 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
   }, [fetchBicycle])
 
   // Lifecycle Action Handlers
-  const handleTagAsAsset = async () => {
-    if (!confirm('Tag this bicycle as an impounded campus asset? This will start a 30-day grace period.')) return
+  const handleTagAsAsset = async (e: FormEvent) => {
+    e.preventDefault()
     setActionLoading(true)
     setErrorMsg('')
     setSuccessMsg('')
@@ -92,15 +108,17 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       const res = await fetch(`${API}/bicycles/${id}/tag-asset`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_id: user.id }),
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        body: JSON.stringify({ actor_id: user.id, ...tagAssetForm }),
       })
       const data = await res.json()
       if (res.ok) {
-        setSuccessMsg('Successfully tagged as ASSET. The 30-day grace period has begun.')
+        setShowTagAssetModal(false)
+        setTagAssetForm({ location: '', notes: '', proof_image_url: '' })
+        setSuccessMsg('Successfully tagged as ASSET. The 15-day grace period has begun.')
         fetchBicycle()
       } else {
-        setErrorMsg(data.detail || 'Failed to tag as asset.')
+        setErrorMsg(parseApiError(data.detail) || 'Failed to tag as asset.')
       }
     } catch {
       setErrorMsg('Failed to communicate with server.')
@@ -118,7 +136,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       const res = await fetch(`${API}/bicycles/${id}/reclaim`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
         body: JSON.stringify({ actor_id: user.id }),
       })
       const data = await res.json()
@@ -126,7 +144,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         setSuccessMsg('Bicycle successfully reclaimed to ACTIVE status!')
         fetchBicycle()
       } else {
-        setErrorMsg(data.detail || 'Failed to reclaim bicycle.')
+        setErrorMsg(parseApiError(data.detail) || 'Failed to reclaim bicycle.')
       }
     } catch {
       setErrorMsg('Failed to communicate with server.')
@@ -144,7 +162,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       const res = await fetch(`${API}/bicycles/${id}/set-auctionable`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
         body: JSON.stringify({ actor_id: user.id }),
       })
       const data = await res.json()
@@ -152,7 +170,33 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         setSuccessMsg('Bicycle transitioned directly to AUCTIONABLE.')
         fetchBicycle()
       } else {
-        setErrorMsg(data.detail || 'Failed to transition to auctionable.')
+        setErrorMsg(parseApiError(data.detail) || 'Failed to transition to auctionable.')
+      }
+    } catch {
+      setErrorMsg('Failed to communicate with server.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleStudentSurrender = async () => {
+    if (!confirm('Surrender your bicycle for auction? You will receive a portion of the proceeds when it is sold.')) return
+    setActionLoading(true)
+    setErrorMsg('')
+    setSuccessMsg('')
+
+    try {
+      const res = await fetch(`${API}/bicycles/${id}/surrender`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        body: JSON.stringify({ actor_id: user.id }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccessMsg('Your bicycle has been surrendered for auction. You will get value when it is sold.')
+        fetchBicycle()
+      } else {
+        setErrorMsg(parseApiError(data.detail) || 'Failed to surrender bicycle.')
       }
     } catch {
       setErrorMsg('Failed to communicate with server.')
@@ -170,13 +214,14 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       const res = await fetch(`${API}/bicycles/${id}/promote-auctionable`, {
         method: 'POST',
+        headers: { 'X-User-Id': String(user.id) },
       })
       const data = await res.json()
       if (res.ok) {
         setSuccessMsg('Asset promoted to AUCTIONABLE successfully!')
         fetchBicycle()
       } else {
-        setErrorMsg(data.detail || 'Failed to promote asset to auctionable.')
+        setErrorMsg(parseApiError(data.detail) || 'Failed to promote asset to auctionable.')
       }
     } catch {
       setErrorMsg('Failed to communicate with server.')
@@ -194,7 +239,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       const res = await fetch(`${API}/auctions/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
         body: JSON.stringify({
           bicycle_id: Number(id),
           created_by_id: user.id,
@@ -213,7 +258,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         setSuccessMsg('Auction created successfully!')
         navigate('/auctions')
       } else {
-        setErrorMsg(data.detail || 'Failed to create auction.')
+        setErrorMsg(parseApiError(data.detail) || 'Failed to create auction.')
       }
     } catch {
       setErrorMsg('Failed to communicate with server.')
@@ -231,7 +276,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       const res = await fetch(`${API}/bicycles/${id}/mark-sold`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
         body: JSON.stringify({
           cycle_condition: soldForm.cycle_condition,
           market_value: Number(soldForm.market_value),
@@ -246,7 +291,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         setSuccessMsg('Bicycle marked as SOLD and recorded in analytics.')
         fetchBicycle()
       } else {
-        setErrorMsg(data.detail || 'Failed to mark as sold.')
+        setErrorMsg(parseApiError(data.detail) || 'Failed to mark as sold.')
       }
     } catch {
       setErrorMsg('Failed to communicate with server.')
@@ -283,12 +328,18 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
   const isOwner = user.id === bicycle.owner_id
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   const isGuard = user.role === 'guard'
+  const isStudent = user.role === 'student'
+
+  // Admin / guard-only lifecycle actions
   const canTagAsAsset = (isAdmin || isGuard) && bicycle.status === 'active'
-  const canReclaim = (isOwner || isAdmin) && bicycle.status === 'asset'
-  const canSetAuctionable = (isOwner || isAdmin) && bicycle.status === 'active'
+  const canReclaim = isAdmin && bicycle.status === 'asset'
+  const canSetAuctionable = isAdmin && bicycle.status === 'active'
   const canPromoteAuctionable = isAdmin && bicycle.status === 'asset'
   const canMarkSold = isAdmin && bicycle.status === 'auctionable'
-  const canCreateAuction = (isAdmin || isOwner) && bicycle.status === 'auctionable'
+  const canCreateAuction = isAdmin && bicycle.status === 'auctionable'
+
+  // Student-only: show notice when their bike has been tagged as an asset
+  const showStudentAssetNotice = isOwner && isStudent && bicycle.status === 'asset'
 
   return (
     <div className="page-wide">
@@ -320,6 +371,18 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
       {/* Notifications */}
       {errorMsg && <div className="alert alert-error">{errorMsg}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
+
+      {/* Student Asset Notice */}
+      {showStudentAssetNotice && (
+        <div className="card-wide" style={{ borderLeft: '4px solid #d97706' }}>
+          <h3 style={{ marginBottom: '8px' }}>Your bicycle has been tagged as a campus asset</h3>
+          <p className="subtitle" style={{ marginBottom: '12px' }}>A guard has flagged it. You have <strong>15 days</strong> to respond.</p>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button type="button" className="btn-submit" style={{ width: 'auto' }} onClick={handleReclaim} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Reclaim my bicycle'}</button>
+            <button type="button" className="btn-secondary" style={{ width: 'auto' }} onClick={handleStudentSurrender} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Surrender for auction (get value when sold)'}</button>
+          </div>
+        </div>
+      )}
 
       {/* Lifecycle Progress Flow */}
       <div className="card-wide">
@@ -403,12 +466,12 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
               <div className="action-card">
                 <div className="action-info">
                   <strong>Tag as Abandoned Asset (Guard/Admin)</strong>
-                  <p>Move cycle to ASSET state. Validates degree duration and initiates 30-day grace period.</p>
+                  <p>Move cycle to ASSET state. Validates degree duration and initiates 15-day grace period.</p>
                 </div>
                 <button
                   type="button"
                   className="btn-action btn-warning"
-                  onClick={handleTagAsAsset}
+                  onClick={() => setShowTagAssetModal(true)}
                   disabled={actionLoading}
                 >
                   Tag as Asset
@@ -516,6 +579,34 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
           </div>
         </div>
       </div>
+
+      {/* Modal: Tag as Asset */}
+      {showTagAssetModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Tag Bicycle as Asset</h3>
+            <p className="subtitle">Location, notes, and proof photo required. Starts the 15-day grace period.</p>
+            <form onSubmit={handleTagAsAsset}>
+              <div className="field">
+                <label>Location *</label>
+                <input type="text" placeholder="e.g. Hostel 3 Bicycle Stand" value={tagAssetForm.location} onChange={(e) => setTagAssetForm({ ...tagAssetForm, location: e.target.value })} required maxLength={150} />
+              </div>
+              <div className="field">
+                <label>Notes *</label>
+                <textarea placeholder="e.g. Found unlocked and unclaimed for 10+ days." value={tagAssetForm.notes} onChange={(e) => setTagAssetForm({ ...tagAssetForm, notes: e.target.value })} required rows={3} style={{ width: '100%', resize: 'vertical' }} />
+              </div>
+              <div className="field">
+                <label>Proof Photo URL * <span style={{ fontWeight: 400, fontSize: '0.82em' }}>(https://...)</span></label>
+                <input type="url" placeholder="https://example.com/photo.jpg" value={tagAssetForm.proof_image_url} onChange={(e) => setTagAssetForm({ ...tagAssetForm, proof_image_url: e.target.value })} required />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-toggle" onClick={() => { setShowTagAssetModal(false); setTagAssetForm({ location: '', notes: '', proof_image_url: '' }) }}>Cancel</button>
+                <button type="submit" className="btn-action btn-warning btn-sm" disabled={actionLoading}>{actionLoading ? 'Tagging...' : 'Tag as Asset'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Create Auction */}
       {showAuctionModal && (

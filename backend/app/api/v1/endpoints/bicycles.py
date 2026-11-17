@@ -343,6 +343,43 @@ def reclaim_bicycle(
     return updated_bike
 
 
+@router.post("/{bicycle_id}/surrender", response_model=BicycleRead)
+def surrender_to_auction(
+    bicycle_id: int,
+    payload: ReclaimRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Owner surrenders an ASSET-state bicycle to AUCTIONABLE, skipping the remaining grace period."""
+    bicycle = get_bicycle_or_404(bicycle_id, db)
+    actor = current_user
+    if payload.actor_id != actor.id:
+        raise HTTPException(403, "Actor must match signed-in user")
+
+    is_owner = (bicycle.owner_id == actor.id) or (bicycle.current_owner_id == actor.id)
+    if not is_owner:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the registered owner can surrender their bicycle.")
+    if bicycle.status != "asset":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Bicycle must be in ASSET state to surrender. Current: {bicycle.status}.")
+
+    from app.models.bicycle import BicycleStatus, CycleState
+    bicycle.status = BicycleStatus.AUCTIONABLE.value
+    bicycle.current_state = CycleState.AUCTIONABLE
+    bicycle.asset_tagged_at = None
+
+    BicycleLifecycleService._record_event(
+        bicycle=bicycle,
+        from_state=CycleState.ASSET,
+        to_state=CycleState.AUCTIONABLE,
+        actor_id=actor.id,
+        notes=payload.notes or "Owner surrendered for auction",
+        db=db,
+    )
+    db.commit()
+    db.refresh(bicycle)
+    return bicycle
+
+
 @router.post("/{bicycle_id}/promote-auctionable", response_model=BicycleRead)
 def promote_auctionable(
     bicycle_id: int,
