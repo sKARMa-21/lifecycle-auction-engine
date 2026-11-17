@@ -68,6 +68,19 @@ class AuctionConnectionManager:
             except Exception:
                 pass
 
+    async def close_all(self):
+        for task in self.listener_tasks.values():
+            if not task.done():
+                task.cancel()
+        for connections in self.active_connections.values():
+            for ws in list(connections):
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+        self.active_connections.clear()
+        self.listener_tasks.clear()
+
 
 auction_ws_manager = AuctionConnectionManager()
 

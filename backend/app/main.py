@@ -14,6 +14,7 @@ from app.core.exceptions import (
     UnauthorizedTransitionError,
 )
 from app.api.v1 import api_router
+from app.websocket import router as websocket_router, auction_ws_manager
 from app.core.config import settings
 
 
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
         expiry_task.cancel()
         with suppress(asyncio.CancelledError):
             await expiry_task
+        await auction_ws_manager.close_all()
 
 
 app = FastAPI(
@@ -71,6 +73,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(websocket_router)
 
 
 # Global exception handlers for domain errors
