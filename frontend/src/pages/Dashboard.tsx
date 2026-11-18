@@ -1,3 +1,4 @@
+import PageHeader from '../components/PageHeader'
 import { useState, useEffect, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { User, UserRole } from '../types/user'
@@ -150,31 +151,17 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   return (
     <div className="page-wide">
       {/* Top Navbar */}
-      <header className="bar">
-        <div>
-          <span className="brand-badge">{config.badge}</span>
-          <h2>{config.title}</h2>
-        </div>
-        <div className="bar-actions">
-          <span className="role-pill">{user.role}</span>
-          <Link to="/bicycles" className="btn-toggle">
-            {config.bicyclesNavLabel}
-          </Link>
-          {config.showAuctionsNav && (
-            <Link to="/auctions" className="btn-toggle">
-              Auction Pool
-            </Link>
-          )}
-          {config.canLaunchAuction && (
-            <Link to="/launch-auction" className="btn-toggle">
-              + Launch Auction
-            </Link>
-          )}
-          <button type="button" className="btn-toggle" onClick={onLogout}>
-            Sign Out
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        badge={config.badge}
+        title={config.title}
+        role={user.role}
+        onLogout={onLogout}
+        links={[
+          { to: '/bicycles', label: config.bicyclesNavLabel },
+          { to: '/auctions', label: 'Auction Pool', visible: config.showAuctionsNav },
+          { to: '/launch-auction', label: '+ Launch Auction', visible: config.canLaunchAuction },
+        ]}
+      />
 
       {/* Welcome Card */}
       <div className="card-wide dashboard-welcome-card">

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import PageHeader from '../components/PageHeader'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import type { Auction, AuctionBidEvent } from '../types/auction'
 import type { User } from '../types/user'
@@ -115,24 +116,16 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
 
   return (
     <div className="page-wide">
-      <header className="bar">
-        <div>
-          <span className="brand-badge">Auction Engine</span>
-          <h2>Campus Bicycle Auctions</h2>
-        </div>
-        <div className="bar-actions">
-          <span className="role-pill">{user.role}</span>
-          <Link to="/bicycles" className="btn-toggle">
-            Bicycles
-          </Link>
-          <Link to="/dashboard" className="btn-toggle">
-            Dashboard
-          </Link>
-          <button type="button" className="btn-toggle" onClick={onLogout}>
-            Sign Out
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        badge="Auction Engine"
+        title="Campus Bicycle Auctions"
+        role={user.role}
+        onLogout={onLogout}
+        links={[
+          { to: '/bicycles', label: 'Bicycles' },
+          { to: '/dashboard', label: 'Dashboard' },
+        ]}
+      />
 
       {msg && (
         <div className={`alert ${msg.isError ? 'alert-error' : 'alert-success'}`}>

@@ -1,3 +1,4 @@
+import PageHeader from './components/PageHeader'
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { User } from './types/user'
@@ -84,18 +85,16 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
 
   return (
     <div className="page-wide">
-      <header className="bar">
-        <div>
-          <span className="brand-badge">CycleEngine</span>
-          <h2>Launch New Auction</h2>
-        </div>
-        <div className="bar-actions">
-          <span className="role-pill">{user.role}</span>
-          <Link to="/dashboard" className="btn-toggle">Dashboard</Link>
-          <Link to="/bicycles" className="btn-toggle">Bicycles</Link>
-          <button type="button" className="btn-toggle" onClick={onLogout}>Sign Out</button>
-        </div>
-      </header>
+      <PageHeader
+        badge="CycleEngine"
+        title="Launch New Auction"
+        role={user.role}
+        onLogout={onLogout}
+        links={[
+          { to: '/dashboard', label: 'Dashboard' },
+          { to: '/bicycles', label: 'Bicycles' },
+        ]}
+      />
 
       {msg && <div className="alert">{msg}</div>}
       {error && <div className="alert alert-error">{error}</div>}

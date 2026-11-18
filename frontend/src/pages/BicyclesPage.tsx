@@ -1,3 +1,4 @@
+import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { User } from '../types/user'
@@ -146,24 +147,16 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
 
   return (
     <div className="page-wide">
-      <header className="bar">
-        <div>
-          <span className="brand-badge">{isStudent ? 'My Cycles' : 'Campus Fleet'}</span>
-          <h2>{isStudent ? 'My Registered Bicycles' : 'Bicycles & Asset Registry'}</h2>
-        </div>
-        <div className="bar-actions">
-          <span className="role-pill">{user.role}</span>
-          <Link to="/auctions" className="btn-toggle">
-            Auctions
-          </Link>
-          <Link to="/dashboard" className="btn-toggle">
-            Dashboard
-          </Link>
-          <button type="button" className="btn-toggle" onClick={onLogout}>
-            Sign Out
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        badge={isStudent ? 'My Cycles' : 'Campus Fleet'}
+        title={isStudent ? 'My Registered Bicycles' : 'Bicycles & Asset Registry'}
+        role={user.role}
+        onLogout={onLogout}
+        links={[
+          { to: '/auctions', label: 'Auctions' },
+          { to: '/dashboard', label: 'Dashboard' },
+        ]}
+      />
 
       {msg && (
         <div className={`alert ${msg.isError ? 'alert-error' : 'alert-success'}`}>

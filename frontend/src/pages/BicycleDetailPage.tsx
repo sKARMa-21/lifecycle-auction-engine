@@ -1,3 +1,4 @@
+import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import type { Bicycle } from '../types/bicycle'
@@ -344,29 +345,17 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
   return (
     <div className="page-wide">
       {/* Top Navbar */}
-      <header className="bar">
-        <div>
-          <span className="brand-badge">Lifecycle Engine</span>
-          <h2>
-            Bicycle #{bicycle.id}: {bicycle.asset_tag}
-          </h2>
-        </div>
-        <div className="bar-actions">
-          <span className="role-pill">{user.role}</span>
-          <Link to="/bicycles" className="btn-toggle">
-            ← Bicycles
-          </Link>
-          <Link to="/auctions" className="btn-toggle">
-            Auctions
-          </Link>
-          <Link to="/dashboard" className="btn-toggle">
-            Dashboard
-          </Link>
-          <button type="button" className="btn-toggle" onClick={onLogout}>
-            Sign Out
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        badge="Lifecycle Engine"
+        title={`Bicycle #${bicycle.id}: ${bicycle.asset_tag}`}
+        role={user.role}
+        onLogout={onLogout}
+        links={[
+          { to: '/bicycles', label: '← Bicycles' },
+          { to: '/auctions', label: 'Auctions' },
+          { to: '/dashboard', label: 'Dashboard' },
+        ]}
+      />
 
       {/* Notifications */}
       {errorMsg && <div className="alert alert-error">{errorMsg}</div>}
