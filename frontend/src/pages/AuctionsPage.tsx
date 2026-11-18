@@ -1,5 +1,5 @@
 import PageHeader from '../components/PageHeader'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { Auction, AuctionBidEvent } from '../types/auction'
 import type { User } from '../types/user'
