@@ -22,3 +22,11 @@ export interface Auction {
   created_at: string
   bids?: Bid[]
 }
+
+export interface AuctionBidEvent {
+  type: 'NEW_BID'
+  bidder_id: number
+  amount: number
+  ends_at: string
+  extended: boolean
+}

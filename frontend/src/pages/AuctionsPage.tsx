@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import type { Auction } from '../types/auction'
+import type { Auction, AuctionBidEvent } from '../types/auction'
 import type { User } from '../types/user'
+import { useAuctionSubscriptions } from '../lib/useAuctionWebSocket'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 
@@ -16,6 +17,28 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   const [bidAmounts, setBidAmounts] = useState<Record<number, string>>({})
   const [biddingId, setBiddingId] = useState<number | null>(null)
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(null)
+
+  const activeAuctionIds = useMemo(
+    () => auctions.filter((a) => a.status === 'active' || a.status === 'extended').map((a) => a.id),
+    [auctions]
+  )
+
+  const handleLiveBid = useCallback((auctionId: number, event: AuctionBidEvent) => {
+    setAuctions((prev) =>
+      prev.map((auc) => {
+        if (auc.id !== auctionId) return auc
+        return {
+          ...auc,
+          current_highest_bid: event.amount,
+          current_winner_id: event.bidder_id,
+          ends_at: event.ends_at,
+          status: event.extended ? 'extended' : auc.status,
+        }
+      })
+    )
+  }, [])
+
+  useAuctionSubscriptions(activeAuctionIds, handleLiveBid)
 
   const loadAuctions = useCallback(async () => {
     try {
