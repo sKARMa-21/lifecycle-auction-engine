@@ -27,6 +27,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   const [biddingId, setBiddingId] = useState<number | null>(null)
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(null)
   const [liveFeeds, setLiveFeeds] = useState<Record<number, LiveBidItem[]>>({})
+  const [outbidNotice, setOutbidNotice] = useState<string | null>(null)
 
   const activeAuctionIds = useMemo(
     () => auctions.filter((a) => a.status === 'active' || a.status === 'extended').map((a) => a.id),
@@ -34,8 +35,12 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   )
 
   const handleLiveBid = useCallback((auctionId: number, event: AuctionBidEvent) => {
-    setAuctions((prev) =>
-      prev.map((auc) => {
+    setAuctions((prev) => {
+      const current = prev.find((a) => a.id === auctionId)
+      if (current && current.current_winner_id === user.id && event.bidder_id !== user.id) {
+        setOutbidNotice(`You were outbid on "${current.title}"! Current bid is now ₹${event.amount}.`)
+      }
+      return prev.map((auc) => {
         if (auc.id !== auctionId) return auc
         return {
           ...auc,
@@ -45,7 +50,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
           status: event.extended ? 'extended' : auc.status,
         }
       })
-    )
+    })
 
     setLiveFeeds((prev) => {
       const existing = prev[auctionId] || []
@@ -60,7 +65,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
         [auctionId]: [item, ...existing.slice(0, 3)],
       }
     })
-  }, [])
+  }, [user.id])
 
   useAuctionSubscriptions(activeAuctionIds, handleLiveBid)
 
@@ -165,6 +170,13 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
         ]}
       />
 
+      {outbidNotice && (
+        <div className="outbid-banner">
+          <span>⚠️ {outbidNotice}</span>
+          <button type="button" onClick={() => setOutbidNotice(null)}>✕</button>
+        </div>
+      )}
+
       {msg && (
         <div className={`alert ${msg.isError ? 'alert-error' : 'alert-success'}`}>
           {msg.text}
@@ -174,7 +186,15 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
       <div className="card-wide">
         <div className="detail-header-flex">
           <div>
-            <h3>Active Bidding Catalog</h3>
+            <h3>
+              Active Bidding Catalog
+              {activeAuctionIds.length > 0 && (
+                <span className="live-pill">
+                  <span className="live-dot"></span>
+                  Live Feed Active
+                </span>
+              )}
+            </h3>
             <p className="subtitle">
               Features pessimistic locking against concurrent bids and automatic 5-min anti-snipe deadline extensions.
             </p>
@@ -209,13 +229,14 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
               const endsDate = new Date(auction.ends_at)
               const isExtended = auction.status === 'extended'
               const isWinner = auction.current_winner_id === user.id
+              const isEnded = auction.status === 'ended' || auction.status === 'cancelled' || new Date(auction.ends_at).getTime() <= Date.now()
               const minRequired =
                 auction.current_winner_id !== null && auction.current_winner_id !== undefined
                   ? auction.current_highest_bid + auction.min_bid_increment
                   : auction.starting_price
 
               return (
-                <div key={auction.id} className="auction-card-box">
+                <div key={auction.id} className={`auction-card-box ${isWinner ? 'auction-card-leading' : ''}`}>
                   <div className="auction-top">
                     <h4>{auction.title}</h4>
                     <span className={`status-badge status-${auction.status}`}>
@@ -236,7 +257,15 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
 
                   <div className="auction-info-row">
                     <span>Time Left:</span>
-                    <AuctionCountdownTimer endsAt={auction.ends_at} isExtended={isExtended} />
+                    <AuctionCountdownTimer
+                      endsAt={auction.ends_at}
+                      isExtended={isExtended}
+                      onExpire={() => {
+                        setAuctions((prev) =>
+                          prev.map((a) => (a.id === auction.id ? { ...a, status: 'ended' } : a))
+                        )
+                      }}
+                    />
                   </div>
 
                   <div className="auction-info-row">
@@ -276,8 +305,22 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
                       Inspect Cycle #{auction.bicycle_id}
                     </Link>
 
-                    {user.role === 'student' ? (
+                    {isEnded ? (
+                      <div className="auction-ended-text">
+                        Bidding Closed ({auction.status.toUpperCase()})
+                      </div>
+                    ) : user.role === 'student' ? (
                       <div className="bid-inline-form">
+                        <button
+                          type="button"
+                          className="btn-fill-min"
+                          onClick={() =>
+                            setBidAmounts((prev) => ({ ...prev, [auction.id]: String(minRequired) }))
+                          }
+                          title={`Auto-fill min ₹${minRequired}`}
+                        >
+                          ₹{minRequired}
+                        </button>
                         <input
                           type="number"
                           placeholder={`Min ₹${minRequired}`}

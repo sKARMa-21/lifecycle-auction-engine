@@ -3,22 +3,27 @@ import { useState, useEffect } from 'react'
 interface Props {
   endsAt: string
   isExtended?: boolean
+  onExpire?: () => void
 }
 
-export default function AuctionCountdownTimer({ endsAt, isExtended }: Props) {
+export default function AuctionCountdownTimer({ endsAt, isExtended, onExpire }: Props) {
   const [timeLeft, setTimeLeft] = useState(() => {
     return Math.max(0, new Date(endsAt).getTime() - Date.now())
   })
 
   useEffect(() => {
     const updateTimer = () => {
-      setTimeLeft(Math.max(0, new Date(endsAt).getTime() - Date.now()))
+      const remaining = Math.max(0, new Date(endsAt).getTime() - Date.now())
+      setTimeLeft(remaining)
+      if (remaining <= 0 && onExpire) {
+        onExpire()
+      }
     }
 
     updateTimer()
     const timer = setInterval(updateTimer, 1000)
     return () => clearInterval(timer)
-  }, [endsAt])
+  }, [endsAt, onExpire])
 
   if (timeLeft <= 0) {
     return <span className="timer-badge timer-ended">Ended</span>

@@ -62,31 +62,45 @@ export function useAuctionSubscriptions(
   useEffect(() => {
     if (auctionIds.length === 0) return
 
-    const sockets: WebSocket[] = []
+    const activeSockets: WebSocket[] = []
+    const timers: number[] = []
     let isCancelled = false
 
     auctionIds.forEach((id) => {
-      const socket = new WebSocket(`${WS_BASE_URL}/${id}`)
+      const connect = () => {
+        if (isCancelled) return
+        const socket = new WebSocket(`${WS_BASE_URL}/${id}`)
 
-      socket.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data)
-          if (payload && payload.type === 'NEW_BID') {
-            onBidRef.current(id, payload)
+        socket.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data)
+            if (payload && payload.type === 'NEW_BID') {
+              onBidRef.current(id, payload)
+            }
+          } catch {}
+        }
+
+        socket.onclose = () => {
+          if (!isCancelled) {
+            const timer = window.setTimeout(connect, 3000)
+            timers.push(timer)
           }
-        } catch {}
+        }
+
+        socket.onerror = () => {
+          socket.close()
+        }
+
+        activeSockets.push(socket)
       }
 
-      socket.onerror = () => {
-        socket.close()
-      }
-
-      sockets.push(socket)
+      connect()
     })
 
     return () => {
       isCancelled = true
-      sockets.forEach((s) => s.close())
+      timers.forEach((t) => window.clearTimeout(t))
+      activeSockets.forEach((s) => s.close())
     }
   }, [idsKey])
 }
