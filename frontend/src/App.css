@@ -901,3 +901,93 @@ body {
   font-size: 0.86rem;
   flex: 1;
 }
+
+.timer-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timer-badge {
+  font-family: monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.timer-normal {
+  background: #EFF6FF;
+  color: #1D4ED8;
+}
+
+.timer-urgent {
+  background: #FEF2F2;
+  color: #DC2626;
+}
+
+.timer-ended {
+  background: #F3F4F6;
+  color: #6B7280;
+}
+
+.timer-pill-extended {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #FEF3C7;
+  color: #B45309;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.auction-live-feed {
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+}
+
+.feed-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.feed-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.feed-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feed-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.feed-time {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.feed-tag {
+  background: #FEF3C7;
+  color: #B45309;
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 700;
+  margin-left: 4px;
+}

@@ -1,4 +1,5 @@
 import PageHeader from '../components/PageHeader'
+import AuctionCountdownTimer from '../components/AuctionCountdownTimer'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { Auction, AuctionBidEvent } from '../types/auction'
@@ -6,6 +7,13 @@ import type { User } from '../types/user'
 import { useAuctionSubscriptions } from '../lib/useAuctionWebSocket'
 
 const API = 'http://127.0.0.1:8000/api/v1'
+
+interface LiveBidItem {
+  bidderId: number
+  amount: number
+  time: string
+  extended: boolean
+}
 
 interface AuctionsPageProps {
   user: User
@@ -18,6 +26,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   const [bidAmounts, setBidAmounts] = useState<Record<number, string>>({})
   const [biddingId, setBiddingId] = useState<number | null>(null)
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(null)
+  const [liveFeeds, setLiveFeeds] = useState<Record<number, LiveBidItem[]>>({})
 
   const activeAuctionIds = useMemo(
     () => auctions.filter((a) => a.status === 'active' || a.status === 'extended').map((a) => a.id),
@@ -37,6 +46,20 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
         }
       })
     )
+
+    setLiveFeeds((prev) => {
+      const existing = prev[auctionId] || []
+      const item: LiveBidItem = {
+        bidderId: event.bidder_id,
+        amount: event.amount,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        extended: event.extended,
+      }
+      return {
+        ...prev,
+        [auctionId]: [item, ...existing.slice(0, 3)],
+      }
+    })
   }, [])
 
   useAuctionSubscriptions(activeAuctionIds, handleLiveBid)
@@ -47,7 +70,22 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
       const res = await fetch(`${API}/auctions/`)
       if (res.ok) {
         const data = await res.json()
-        setAuctions(Array.isArray(data) ? data : [])
+        const list = Array.isArray(data) ? data : []
+        setAuctions(list)
+        setLiveFeeds((prev) => {
+          const updated = { ...prev }
+          list.forEach((auc: Auction) => {
+            if (auc.bids && auc.bids.length > 0 && !updated[auc.id]) {
+              updated[auc.id] = auc.bids.slice(0, 4).map((b) => ({
+                bidderId: b.bidder_id,
+                amount: b.amount,
+                time: new Date(b.placed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                extended: false,
+              }))
+            }
+          })
+          return updated
+        })
       }
     } catch {
       setMsg({ text: 'Unable to connect to auction server.', isError: true })
@@ -197,6 +235,11 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
                   </div>
 
                   <div className="auction-info-row">
+                    <span>Time Left:</span>
+                    <AuctionCountdownTimer endsAt={auction.ends_at} isExtended={isExtended} />
+                  </div>
+
+                  <div className="auction-info-row">
                     <span>Deadline:</span>
                     <strong>{endsDate.toLocaleString()}</strong>
                   </div>
@@ -206,6 +249,23 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
                       You currently hold the highest bid.
                     </div>
                   )}
+
+                  <div className="auction-live-feed">
+                    <span className="feed-title">Live Bid Feed</span>
+                    {(!liveFeeds[auction.id] || liveFeeds[auction.id].length === 0) ? (
+                      <span className="feed-empty">No live bids yet</span>
+                    ) : (
+                      <ul className="feed-list">
+                        {liveFeeds[auction.id].map((item, idx) => (
+                          <li key={idx} className="feed-item">
+                            <span>Bidder #{item.bidderId}: <strong>₹{item.amount}</strong></span>
+                            <span className="feed-time">{item.time}</span>
+                            {item.extended && <span className="feed-tag">+5m</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
 
                   <div className="auction-actions">
                     <Link
