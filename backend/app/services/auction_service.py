@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import List
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.auction import Auction, Bid, AuctionStatus
@@ -147,7 +148,11 @@ class AuctionService:
         if auction.status not in [AuctionStatus.ACTIVE, AuctionStatus.EXTENDED]:
             raise HTTPException(status_code=400, detail="Auction is closed or inactive")
 
-        if now > auction.ends_at:
+        ends_at = auction.ends_at
+        if ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+
+        if now > ends_at:
             auction.status = AuctionStatus.ENDED
             db.commit()
             raise HTTPException(status_code=400, detail="Auction deadline has passed")
@@ -178,12 +183,28 @@ class AuctionService:
         if auction.current_winner_id == bidder_id:
             raise HTTPException(status_code=400, detail="You are already the highest bidder")
 
+        # Mark previous highest bid as outbid
+        if auction.current_winner_id is not None:
+            prev_winning = (
+                db.query(Bid)
+                .filter(
+                    Bid.auction_id == auction_id,
+                    Bid.bidder_id == auction.current_winner_id,
+                    Bid.status == "winning",
+                )
+                .order_by(Bid.placed_at.desc())
+                .first()
+            )
+            if prev_winning:
+                prev_winning.status = "outbid"
+
         # Create bid record
         new_bid = Bid(
             auction_id=auction.id,
             bidder_id=bidder_id,
             amount=bid_in.amount,
             placed_at=now,
+            status="winning",
         )
         db.add(new_bid)
 
@@ -192,10 +213,11 @@ class AuctionService:
         auction.current_winner_id = bidder_id
 
         is_extended = False
-        time_left = auction.ends_at - now
+        # Anti-sniping dynamic extension
+        time_left = ends_at - now
         threshold = timedelta(minutes=auction.anti_snipe_trigger_window)
         if time_left < threshold:
-            auction.ends_at = auction.ends_at + timedelta(minutes=auction.anti_snipe_extension_minutes)
+            auction.ends_at = ends_at + timedelta(minutes=auction.anti_snipe_extension_minutes)
             auction.extension_count = (auction.extension_count or 0) + 1
             auction.status = AuctionStatus.EXTENDED
             is_extended = True
@@ -232,3 +254,109 @@ class AuctionService:
             .limit(limit)
             .all()
         )
+
+    @staticmethod
+    def settle_auction(db: Session, auction_id: int) -> Auction:
+        """Settle an ended auction.
+
+        - If there is a winner: transitions bicycle AUCTIONABLE -> SOLD,
+          transfers ownership to the winning bidder, marks winning bid as
+          'winning' and all other bids as 'outbid', sets payment deadline.
+        - If no bids were placed: marks the auction CANCELLED and leaves the
+          bicycle in AUCTIONABLE state so it can be re-listed.
+        """
+        # Pessimistic lock to avoid concurrent double-settlement
+        auction = (
+            db.query(Auction)
+            .filter(Auction.id == auction_id)
+            .with_for_update()
+            .first()
+        )
+        if not auction:
+            raise HTTPException(status_code=404, detail="Auction not found")
+
+        if auction.status == AuctionStatus.SETTLED:
+            raise HTTPException(status_code=400, detail="Auction is already settled")
+
+        if auction.status == AuctionStatus.CANCELLED:
+            raise HTTPException(status_code=400, detail="Auction is already cancelled")
+
+        # Cannot settle an auction that's still live (or scheduled and not yet over)
+        now = datetime.now(timezone.utc)
+        ends_at = auction.ends_at
+        if ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+
+        if ends_at > now and auction.status in (
+            AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Auction is still live and ends at {auction.ends_at.isoformat()}.",
+            )
+
+        bicycle = db.get(Bicycle, auction.bicycle_id)
+        if not bicycle:
+            raise HTTPException(status_code=404, detail="Associated bicycle not found")
+
+        # --- No bids: cancel, leave bicycle auctionable for re-listing ---
+        if auction.current_winner_id is None:
+            auction.status = AuctionStatus.CANCELLED
+            db.commit()
+            db.refresh(auction)
+            return auction
+
+        # --- Has a winner: settle ---
+        # 1. Update bid statuses: highest bid -> winning, rest -> outbid
+        all_bids: List[Bid] = (
+            db.query(Bid)
+            .filter(Bid.auction_id == auction_id)
+            .order_by(Bid.amount.desc())
+            .all()
+        )
+        seen_winner = False
+        for bid in all_bids:
+            if bid.bidder_id == auction.current_winner_id and not seen_winner:
+                bid.status = "winning"
+                seen_winner = True
+            else:
+                bid.status = "outbid"
+
+        # 2. Transition bicycle AUCTIONABLE -> SOLD via lifecycle service
+        BicycleLifecycleService.mark_as_sold(
+            bicycle=bicycle,
+            sold_price=auction.current_highest_bid,
+            notes=f"Sold via auction #{auction.id}. Winner: user #{auction.current_winner_id}",
+            db=db,
+        )
+
+        # 3. Transfer bicycle ownership to winner
+        bicycle.owner_id = auction.current_winner_id
+        bicycle.current_owner_id = auction.current_winner_id
+
+        # 4. Set payment deadline (48 hours from settlement) and mark SETTLED
+        auction.payment_deadline = now + timedelta(hours=48)
+        auction.status = AuctionStatus.SETTLED
+
+        db.commit()
+        db.refresh(auction)
+        return auction
+
+    @staticmethod
+    def close_ended_auctions(db: Session) -> List[Auction]:
+        """Cron sweep: finds all SCHEDULED/ACTIVE/EXTENDED auctions past their end time
+        and marks them ENDED so they are ready to be settled.
+        """
+        now = datetime.now(timezone.utc)
+        expired = (
+            db.query(Auction)
+            .filter(
+                Auction.status.in_([AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED]),
+                Auction.ends_at <= now,
+            )
+            .all()
+        )
+        for auction in expired:
+            auction.status = AuctionStatus.ENDED
+        db.commit()
+        return expired

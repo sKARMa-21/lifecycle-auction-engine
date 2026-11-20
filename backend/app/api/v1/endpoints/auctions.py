@@ -2,13 +2,13 @@ from typing import List
 from datetime import datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, status, HTTPException
-from app.api.v1.deps import get_current_user
+from app.api.v1.deps import get_current_user, require_roles
 from app.models.auction import Auction, AuctionParticipant, AuctionStatus
 from app.models.bicycle import Bicycle
-from app.models.user import User
+from app.models.user import User, UserRole
 from sqlalchemy.orm import Session
 from app.db.session import get_db  # Adjust to your get_db dependency
-from app.schemas.auction import AuctionCreate, AuctionResponse, BidCreate, BidResponse
+from app.schemas.auction import AuctionCreate, AuctionResponse, BidCreate, BidResponse, SettleResponse
 from app.services.auction_service import AuctionService
 
 router = APIRouter(prefix="/auctions", tags=["Auctions"])
@@ -74,3 +74,27 @@ def join_auction(auction_id: int, db: Session = Depends(get_db), user: User = De
         db.add(AuctionParticipant(auction_id=auction_id, user_id=user.id))
         db.commit()
     return participation(auction_id, db, user)
+
+
+@router.post("/{auction_id}/settle", response_model=SettleResponse)
+def settle_auction(
+    auction_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Settle an ended auction (admin only).
+
+    - Transitions the winning bicycle to SOLD and transfers ownership.
+    - If no bids were placed, cancels the auction and leaves bicycle AUCTIONABLE.
+    - Sets a 48-hour payment deadline for the winner.
+    """
+    return AuctionService.settle_auction(db, auction_id)
+
+
+@router.post("/cron/close-ended", response_model=List[AuctionResponse])
+def close_ended_auctions(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Cron endpoint: sweeps all live auctions past their end time and marks them ENDED (admin only)."""
+    return AuctionService.close_ended_auctions(db)
