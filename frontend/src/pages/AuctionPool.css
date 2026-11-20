@@ -1,0 +1,349 @@
+.auction-shell {
+    --text: #ecf2ff;
+    --text-muted: #94a8c8;
+    --border: #1b2c47;
+    min-height: 100vh;
+    background: #080f20;
+    color: var(--text);
+}
+
+.auction-shell .page-wide {
+    max-width: 1200px;
+}
+
+.auction-shell .brand-badge,
+.auction-shell .role-pill {
+    background: #152441;
+    color: #b8ceff;
+}
+
+.auction-shell .btn-toggle {
+    background: transparent;
+    color: #b8c9e7;
+}
+
+.auction-shell .bar h2 {
+    font-size: clamp(1.2rem, 3vw, 1.7rem);
+    letter-spacing: -.025em;
+}
+
+.pool-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.pool-muted {
+    color: var(--text-muted);
+    font-size: .875rem;
+    line-height: 1.5;
+}
+
+.pool-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    flex-wrap: wrap;
+    margin: 36px 0;
+}
+
+.pool-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #8fe1c3;
+    font-size: .875rem;
+}
+
+.pool-status>span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.pool-time {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    font-variant-numeric: tabular-nums;
+    font-size: .95rem;
+}
+
+.pool-time>.pool-icon {
+    width: 16px;
+    color: #94a8c8;
+}
+
+.pool-urgent {
+    color: #f2be8c;
+}
+
+.pool-room-layout {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: clamp(32px, 6vw, 80px);
+    align-items: start;
+    padding: 20px 16px 40px;
+}
+
+.pool-leader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 20px 0;
+    min-width: 0;
+}
+
+.pool-avatar {
+    width: 54px;
+    height: 54px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #152540;
+    color: #b2d1ff;
+    border: 1px solid #5477a66b;
+}
+
+.pool-avatar .pool-icon {
+    width: 26px;
+    height: 26px;
+}
+
+.pool-color-1 {
+    background: #211d3e;
+    color: #cec6ff;
+}
+
+.pool-color-2 {
+    background: #122e35;
+    color: #a9e5da;
+}
+
+.pool-color-3 {
+    background: #30213c;
+    color: #e8c1ed;
+}
+
+.pool-avatar-you {
+    border: 2px solid #a2c3ff;
+}
+
+.pool-leader-avatar {
+    width: 112px;
+    height: 112px;
+    border: 2px solid #edcb80;
+    margin: 20px 0 24px;
+}
+
+.pool-leader-avatar .pool-icon {
+    width: 50px;
+    height: 50px;
+}
+
+.pool-crown {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #edcb80;
+    font-size: .875rem;
+}
+
+.pool-leader-name {
+    font-size: 1.5rem;
+    font-weight: 500;
+    margin-bottom: 20px;
+    overflow-wrap: anywhere;
+}
+
+.pool-price {
+    font-size: clamp(2.4rem, 5vw, 3.5rem);
+    font-weight: 500;
+    letter-spacing: -.045em;
+    margin: 6px 0 30px;
+    font-variant-numeric: tabular-nums;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.pool-bid-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: 100%;
+    max-width: 380px;
+    min-height: 68px;
+    border: 1px solid #789eff;
+    border-radius: 100px;
+    background: #416bd3;
+    color: #fff;
+    padding: 20px 26px;
+    font: inherit;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 16px;
+}
+
+.pool-bid-button .pool-icon {
+    width: 25px;
+    height: 25px;
+}
+
+.pool-bid-button:hover:not(:disabled) {
+    background: #507ce5;
+}
+
+.pool-bid-button:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.pool-feedback {
+    font-size: .875rem;
+    color: #acc0e0;
+    margin-top: 16px;
+    line-height: 1.6;
+    min-height: 24px;
+}
+
+.pool-standings {
+    min-width: 0;
+    padding-top: 20px;
+}
+
+.pool-list-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+}
+
+.pool-list-heading h2 {
+    font-size: 1.2rem;
+    font-weight: 500;
+}
+
+.pool-people {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.pool-person {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 0;
+    border-bottom: 1px solid #ffffff09;
+}
+
+.pool-person:last-child {
+    border-bottom: 0;
+}
+
+.pool-person-name {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.pool-person-name strong {
+    font-size: 1rem;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.pool-person-amount {
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+    text-align: right;
+}
+
+.pool-list-crown {
+    display: flex;
+    color: #edcb80;
+}
+
+.pool-person-leading .pool-person-amount {
+    color: #edcb80;
+}
+
+.pool-person-leading .pool-avatar {
+    border-color: #edcb80;
+}
+
+.pool-deadline {
+    text-align: center;
+    color: #8094b4;
+    font-size: .8rem;
+    margin-top: 10px;
+}
+
+.pool-unavailable {
+    text-align: center;
+    padding: 100px 20px;
+}
+
+.pool-unavailable p {
+    margin: 20px 0;
+    line-height: 1.6;
+}
+
+.pool-notice {
+    color: #ffd7a8;
+    text-align: center;
+    padding: 16px;
+    font-size: .9rem;
+}
+
+.auction-shell a:focus-visible,
+.auction-shell button:focus-visible {
+    outline: 2px solid #b8ceff;
+    outline-offset: 5px;
+}
+
+@media (max-width: 700px) {
+    .auction-shell .page-wide {
+        padding: 24px 16px;
+    }
+
+    .pool-room-layout {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: 0 0 24px;
+    }
+
+    .pool-meta {
+        margin: 24px 0;
+        gap: 16px;
+    }
+
+    .pool-person {
+        gap: 12px;
+    }
+
+    .pool-person-amount {
+        font-size: 1rem;
+    }
+
+    .pool-avatar {
+        width: 46px;
+        height: 46px;
+    }
+
+    .pool-leader-avatar {
+        width: 96px;
+        height: 96px;
+    }
+}
