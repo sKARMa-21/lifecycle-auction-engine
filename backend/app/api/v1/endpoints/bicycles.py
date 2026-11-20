@@ -254,182 +254,83 @@ def delete_bicycle(
     return None
 
 
-@router.post("/{bicycle_id}/tag-asset", response_model=BicycleRead)
-def tag_as_asset(
-    bicycle_id: int,
-    payload: TagAssetRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Record neglect and begin the owner's 15-day claim period."""
+# ---------------------------------------------------------------------------
+# Lifecycle transitions — thin wrappers over BicycleLifecycleService.
+# Domain errors (invalid state / unauthorized / grace period) are mapped to
+# HTTP 400/403 by the exception handlers in app/main.py.
+# ---------------------------------------------------------------------------
+
+def _transition(bicycle_id: int, db: Session, actor: User, payload_actor_id: Optional[int], action, **kwargs) -> Bicycle:
+    """Lock the bicycle, verify the payload actor is the signed-in user, apply the transition, commit."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
-    actor = current_user
-    if payload.actor_id != actor.id:
+    if payload_actor_id is not None and payload_actor_id != actor.id:
         raise HTTPException(403, "Actor must match signed-in user")
-
-    updated_bike = BicycleLifecycleService.tag_as_asset(
-        bicycle=bicycle,
-        actor=actor,
-        location=payload.location,
-        notes=payload.notes,
-        proof_image_url=payload.proof_image_url,
-        db=db,
-    )
-    db.commit()
-    db.refresh(updated_bike)
-    return updated_bike
-
-
-@router.post("/{bicycle_id}/set-auctionable", response_model=BicycleRead)
-def set_auctionable(
-    bicycle_id: int,
-    payload: MarkAuctionableRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Student owner directly moves their ACTIVE cycle to AUCTIONABLE."""
-    bicycle = get_bicycle_or_404(bicycle_id, db)
-    actor = current_user
-    if payload.actor_id != actor.id:
-        raise HTTPException(403, "Actor must match signed-in user")
-
-    updated_bike = BicycleLifecycleService.mark_as_auctionable_by_owner(
-        bicycle=bicycle,
-        actor=actor,
-        notes=payload.notes,
-        db=db,
-    )
-    db.commit()
-    db.refresh(updated_bike)
-    return updated_bike
-
-
-@router.post("/{bicycle_id}/reclaim", response_model=BicycleRead)
-def reclaim_bicycle(
-    bicycle_id: int,
-    payload: ReclaimRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Owner reclaims a reported bicycle within 15 days."""
-    bicycle = get_bicycle_or_404(bicycle_id, db)
-    actor = current_user
-    if payload.actor_id != actor.id:
-        raise HTTPException(403, "Actor must match signed-in user")
-
-    updated_bike = BicycleLifecycleService.reclaim_bicycle(
-        bicycle=bicycle,
-        actor=actor,
-        notes=payload.notes,
-        db=db,
-    )
-    db.commit()
-    db.refresh(updated_bike)
-    return updated_bike
-
-
-@router.post("/{bicycle_id}/surrender", response_model=BicycleRead)
-def surrender_to_auction(
-    bicycle_id: int,
-    payload: ReclaimRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Owner surrenders an ASSET-state bicycle to AUCTIONABLE, skipping the remaining grace period."""
-    bicycle = get_bicycle_or_404(bicycle_id, db)
-    actor = current_user
-    if payload.actor_id != actor.id:
-        raise HTTPException(403, "Actor must match signed-in user")
-
-    is_owner = (bicycle.owner_id == actor.id) or (bicycle.current_owner_id == actor.id)
-    if not is_owner:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the registered owner can surrender their bicycle.")
-    if bicycle.status != "asset":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Bicycle must be in ASSET state to surrender. Current: {bicycle.status}.")
-
-    from app.models.bicycle import BicycleStatus, CycleState
-    bicycle.status = BicycleStatus.AUCTIONABLE.value
-    bicycle.current_state = CycleState.AUCTIONABLE
-    bicycle.asset_tagged_at = None
-
-    BicycleLifecycleService._record_event(
-        bicycle=bicycle,
-        from_state=CycleState.ASSET,
-        to_state=CycleState.AUCTIONABLE,
-        actor_id=actor.id,
-        notes=payload.notes or "Owner surrendered for auction",
-        db=db,
-    )
+    action(bicycle=bicycle, actor=actor, db=db, **kwargs)
     db.commit()
     db.refresh(bicycle)
     return bicycle
 
 
-@router.post("/{bicycle_id}/promote-auctionable", response_model=BicycleRead)
-def promote_auctionable(
-    bicycle_id: int,
-    db: Session = Depends(get_db),
-    actor: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    """Promote after the owner's 15-day claim period."""
-    bicycle = get_bicycle_or_404(bicycle_id, db)
+@router.post("/{bicycle_id}/tag-asset", response_model=BicycleRead)
+def tag_as_asset(bicycle_id: int, payload: TagAssetRequest, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Guard/admin records neglect and begins the owner's 15-day claim period."""
+    return _transition(bicycle_id, db, user, payload.actor_id, BicycleLifecycleService.tag_as_asset,
+                       location=payload.location, notes=payload.notes, proof_image_url=payload.proof_image_url)
 
-    updated_bike = BicycleLifecycleService.promote_asset_to_auctionable(
-        bicycle=bicycle,
-        actor=actor,
-        db=db,
-    )
-    db.commit()
-    db.refresh(updated_bike)
-    return updated_bike
+
+@router.post("/{bicycle_id}/set-auctionable", response_model=BicycleRead)
+def set_auctionable(bicycle_id: int, payload: MarkAuctionableRequest, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """Student owner moves their ACTIVE cycle straight to AUCTIONABLE."""
+    return _transition(bicycle_id, db, user, payload.actor_id,
+                       BicycleLifecycleService.mark_as_auctionable_by_owner, notes=payload.notes)
+
+
+@router.post("/{bicycle_id}/reclaim", response_model=BicycleRead)
+def reclaim_bicycle(bicycle_id: int, payload: ReclaimRequest, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """Owner reclaims a reported bicycle within 15 days."""
+    return _transition(bicycle_id, db, user, payload.actor_id, BicycleLifecycleService.reclaim_bicycle,
+                       notes=payload.notes)
+
+
+@router.post("/{bicycle_id}/surrender", response_model=BicycleRead)
+def surrender_to_auction(bicycle_id: int, payload: ReclaimRequest, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """Owner surrenders an ASSET bicycle to AUCTIONABLE, skipping the remaining grace period."""
+    return _transition(bicycle_id, db, user, payload.actor_id, BicycleLifecycleService.surrender_to_auction,
+                       notes=payload.notes)
+
+
+@router.post("/{bicycle_id}/promote-auctionable", response_model=BicycleRead)
+def promote_auctionable(bicycle_id: int, db: Session = Depends(get_db),
+                        user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
+    """Admin promotes an ASSET after the owner's 15-day claim period."""
+    return _transition(bicycle_id, db, user, None, BicycleLifecycleService.promote_asset_to_auctionable)
 
 
 @router.post("/cron/process-expired-assets", response_model=List[BicycleRead])
-def process_expired_assets(db: Session = Depends(get_db), actor: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
-    """Automated job endpoint: scans all ASSET cycles and transitions expired ones to AUCTIONABLE."""
+def process_expired_assets(db: Session = Depends(get_db),
+                           user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
+    """Manual trigger for the expiry job (it also runs every 60s in app/workers/asset_expiry.py)."""
     return BicycleLifecycleService.process_expired_assets(db)
 
 
 @router.post("/{bicycle_id}/mark-sold", response_model=BicycleRead)
-def mark_sold(
-    bicycle_id: int,
-    payload: MarkSoldRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    """Finalizes cycle state from AUCTIONABLE to SOLD and records sale analytics."""
-    bicycle = get_bicycle_or_404(bicycle_id, db)
-    actor = current_user
-
-    updated_bike = BicycleLifecycleService.mark_as_sold(
-        bicycle=bicycle,
-        actor=actor,
-        cycle_condition=payload.cycle_condition,
-        market_value=payload.market_value,
-        years_used=payload.years_used,
-        base_price_set=payload.base_price_set,
-        sold_price=payload.sold_price,
-        notes=payload.notes,
-        db=db,
-    )
-    db.commit()
-    db.refresh(updated_bike)
-    return updated_bike
+def mark_sold(bicycle_id: int, payload: MarkSoldRequest, db: Session = Depends(get_db),
+              user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
+    """Admin finalizes AUCTIONABLE -> SOLD and records sale analytics."""
+    return _transition(bicycle_id, db, user, None, BicycleLifecycleService.mark_as_sold,
+                       **payload.model_dump(exclude={"actor_id"}))
 
 
 @router.get("/{bicycle_id}/events", response_model=List[LifecycleEventRead])
-def get_lifecycle_events(
-    bicycle_id: int,
-    db: Session = Depends(get_db),
-    actor: User = Depends(get_current_user),
-):
-    """Retrieve full audit history / lifecycle events for a bicycle."""
+def get_lifecycle_events(bicycle_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Audit history of a bicycle (owner or staff only)."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
-    if actor.role == UserRole.STUDENT and (bicycle.current_owner_id or bicycle.owner_id) != actor.id:
+    if user.role == UserRole.STUDENT and (bicycle.current_owner_id or bicycle.owner_id) != user.id:
         raise HTTPException(403, "Only the owner or staff can view inspection evidence")
-    stmt = (
-        select(LifecycleEvent)
-        .where(LifecycleEvent.bicycle_id == bicycle_id)
-        .order_by(LifecycleEvent.created_at.asc())
-    )
-    return list(db.scalars(stmt).all())
+    return list(db.scalars(
+        select(LifecycleEvent).where(LifecycleEvent.bicycle_id == bicycle_id).order_by(LifecycleEvent.created_at.asc())
+    ).all())
