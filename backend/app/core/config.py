@@ -1,11 +1,13 @@
 from pathlib import Path
 
+from pydantic import SecretStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
+    jwt_secret: SecretStr = Field(min_length=32)
     database_url: str
     redis_url: str = "redis://127.0.0.1:6379/0"
     first_super_admin_email: str = "superadmin@campus.edu"

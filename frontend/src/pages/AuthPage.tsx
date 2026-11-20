@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { User } from '../types/user'
 
 interface AuthPageProps {
-  onLogin: (user: User) => void
+  onLogin: (user: User, token: string) => void
 }
 
 export default function AuthPage({ onLogin }: AuthPageProps) {
@@ -39,7 +39,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
           setIsRegister(false)
           setPassword('')
         } else {
-          onLogin(data)
+          onLogin(data.user, data.access_token)
           navigate('/dashboard')
         }
       } else {

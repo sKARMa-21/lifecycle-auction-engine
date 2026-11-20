@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -49,7 +49,7 @@ def get_user_or_404(user_id: int, db: Session) -> User:
 @router.post("/", response_model=BicycleRead, status_code=status.HTTP_201_CREATED)
 def create_bicycle(
     payload: BicycleCreate,
-    x_user_id: Optional[int] = Header(None, alias="X-User-Id"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Register a new bicycle in the system.
@@ -63,19 +63,17 @@ def create_bicycle(
         )
 
     bike_data = payload.model_dump()
-    actor_id = x_user_id or bike_data.get("owner_id")
-    if actor_id:
-        actor = db.get(User, actor_id)
-        if actor and actor.role == UserRole.STUDENT:
-            bike_data["owner_id"] = actor.id
-            bike_data["current_owner_id"] = actor.id
-        elif actor and actor.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.GUARD):
-            # Staff cannot register bicycles as their own personal property
-            if bike_data.get("owner_id") == actor.id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Guards and Admins cannot own bicycles. Only registered students can own a bicycle.",
-                )
+    actor = current_user
+    if actor and actor.role == UserRole.STUDENT:
+        bike_data["owner_id"] = actor.id
+        bike_data["current_owner_id"] = actor.id
+    elif actor and actor.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.GUARD):
+        # Staff cannot register bicycles as their own personal property
+        if bike_data.get("owner_id") == actor.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Guards and Admins cannot own bicycles. Only registered students can own a bicycle.",
+            )
 
     # Validate that any assigned owner is strictly a STUDENT
     if bike_data.get("owner_id") is not None:
@@ -100,13 +98,11 @@ def list_bicycles(
     skip: int = 0,
     limit: int = 100,
     owner_id: Optional[int] = None,
-    x_user_id: Optional[int] = Header(None, alias="X-User-Id"),
-    current_user_id: Optional[int] = Query(None, alias="current_user_id"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Retrieve bicycles. If requester is a student, only their own bicycles are returned."""
-    caller_id = x_user_id or current_user_id
-    caller = db.get(User, caller_id) if caller_id else None
+    caller = current_user
 
     query = select(Bicycle)
 
@@ -135,14 +131,12 @@ def lookup_bicycle(token: str, db: Session = Depends(get_db), actor: User = Depe
 @router.get("/{bicycle_id}", response_model=BicycleRead)
 def get_bicycle(
     bicycle_id: int,
-    x_user_id: Optional[int] = Header(None, alias="X-User-Id"),
-    current_user_id: Optional[int] = Query(None, alias="current_user_id"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Retrieve details and lifecycle state of a bicycle."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
-    caller_id = x_user_id or current_user_id
-    caller = db.get(User, caller_id) if caller_id else None
+    caller = current_user
 
     # If caller is a student, verify they own the bicycle or it is in an auctionable state
     if caller and caller.role == UserRole.STUDENT:
@@ -161,15 +155,14 @@ def get_bicycle(
 def update_bicycle(
     bicycle_id: int,
     payload: BicycleUpdate,
-    x_user_id: Optional[int] = Header(None, alias="X-User-Id"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Update details of a bicycle."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
     update_data = payload.model_dump(exclude_unset=True)
 
-    actor_id = x_user_id
-    actor = db.get(User, actor_id) if actor_id else None
+    actor = current_user
 
     # Students can only update their own bicycle and cannot change owner_id directly
     if actor and actor.role == UserRole.STUDENT:
@@ -202,7 +195,7 @@ def update_bicycle(
 def transfer_bicycle_ownership(
     bicycle_id: int,
     payload: TransferOwnershipRequest,
-    x_user_id: Optional[int] = Header(None, alias="X-User-Id"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Transfer ownership of a bicycle to another user.
@@ -211,14 +204,7 @@ def transfer_bicycle_ownership(
     """
     bicycle = get_bicycle_or_404(bicycle_id, db)
 
-    actor_id = payload.actor_id or x_user_id
-    if not actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required to transfer ownership. Please provide actor_id or X-User-Id header.",
-        )
-
-    actor = get_user_or_404(actor_id, db)
+    actor = current_user
 
     # Verify authorization: Must be owner or admin/super_admin
     is_owner = (bicycle.owner_id == actor.id) or (bicycle.current_owner_id == actor.id)
@@ -248,14 +234,13 @@ def transfer_bicycle_ownership(
 @router.delete("/{bicycle_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_bicycle(
     bicycle_id: int,
-    x_user_id: Optional[int] = Header(None, alias="X-User-Id"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Delete a bicycle from the system."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
 
-    actor_id = x_user_id
-    actor = db.get(User, actor_id) if actor_id else None
+    actor = current_user
     if actor and actor.role == UserRole.STUDENT:
         is_owner = (bicycle.owner_id == actor.id) or (bicycle.current_owner_id == actor.id)
         if not is_owner:
@@ -414,7 +399,7 @@ def mark_sold(
 ):
     """Finalizes cycle state from AUCTIONABLE to SOLD and records sale analytics."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
-    actor = get_user_or_404(payload.actor_id, db) if payload.actor_id else None
+    actor = current_user
 
     updated_bike = BicycleLifecycleService.mark_as_sold(
         bicycle=bicycle,

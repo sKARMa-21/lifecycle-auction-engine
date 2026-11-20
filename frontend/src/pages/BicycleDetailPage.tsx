@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
@@ -29,6 +30,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     title: '',
     starting_price: 500,
     min_bid_increment: 50,
+    starts_at: '',
     ends_at: '',
   })
 
@@ -62,10 +64,8 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     try {
       setLoading(true)
       const [resB, resU] = await Promise.all([
-        fetch(`${API}/bicycles/${id}`, {
-          headers: { 'X-User-Id': String(user.id) },
-        }),
-        fetch(`${API}/auth/users`),
+        apiFetch(`${API}/bicycles/${id}`),
+        apiFetch(`${API}/auth/users`),
       ])
 
       if (!resB.ok) {
@@ -107,9 +107,9 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     setSuccessMsg('')
 
     try {
-      const res = await fetch(`${API}/bicycles/${id}/tag-asset`, {
+      const res = await apiFetch(`${API}/bicycles/${id}/tag-asset`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_id: user.id, ...tagAssetForm }),
       })
       const data = await res.json()
@@ -135,9 +135,9 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     setSuccessMsg('')
 
     try {
-      const res = await fetch(`${API}/bicycles/${id}/reclaim`, {
+      const res = await apiFetch(`${API}/bicycles/${id}/reclaim`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_id: user.id }),
       })
       const data = await res.json()
@@ -161,9 +161,9 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     setSuccessMsg('')
 
     try {
-      const res = await fetch(`${API}/bicycles/${id}/set-auctionable`, {
+      const res = await apiFetch(`${API}/bicycles/${id}/set-auctionable`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_id: user.id }),
       })
       const data = await res.json()
@@ -187,9 +187,9 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     setSuccessMsg('')
 
     try {
-      const res = await fetch(`${API}/bicycles/${id}/surrender`, {
+      const res = await apiFetch(`${API}/bicycles/${id}/surrender`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor_id: user.id }),
       })
       const data = await res.json()
@@ -213,9 +213,8 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     setSuccessMsg('')
 
     try {
-      const res = await fetch(`${API}/bicycles/${id}/promote-auctionable`, {
+      const res = await apiFetch(`${API}/bicycles/${id}/promote-auctionable`, {
         method: 'POST',
-        headers: { 'X-User-Id': String(user.id) },
       })
       const data = await res.json()
       if (res.ok) {
@@ -238,15 +237,16 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     setSuccessMsg('')
 
     try {
-      const res = await fetch(`${API}/auctions/`, {
+      const res = await apiFetch(`${API}/auctions/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           bicycle_id: Number(id),
           created_by_id: user.id,
           title: auctionForm.title,
           starting_price: Number(auctionForm.starting_price),
           min_bid_increment: Number(auctionForm.min_bid_increment),
+          starts_at: new Date(auctionForm.starts_at).toISOString(),
           ends_at: new Date(auctionForm.ends_at).toISOString(),
           anti_snipe_trigger_window: 5,
           anti_snipe_extension_minutes: 5,
@@ -275,9 +275,9 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     setSuccessMsg('')
 
     try {
-      const res = await fetch(`${API}/bicycles/${id}/mark-sold`, {
+      const res = await apiFetch(`${API}/bicycles/${id}/mark-sold`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-User-Id': String(user.id) },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cycle_condition: soldForm.cycle_condition,
           market_value: Number(soldForm.market_value),
@@ -630,6 +630,15 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
                   min="1"
                   value={auctionForm.min_bid_increment}
                   onChange={(e) => setAuctionForm({ ...auctionForm, min_bid_increment: Number(e.target.value) })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Auction Start Date & Time *</label>
+                <input
+                  type="datetime-local"
+                  value={auctionForm.starts_at}
+                  onChange={(e) => setAuctionForm({ ...auctionForm, starts_at: e.target.value })}
                   required
                 />
               </div>

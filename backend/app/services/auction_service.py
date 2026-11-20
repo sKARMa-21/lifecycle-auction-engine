@@ -130,7 +130,7 @@ class AuctionService:
         return auction
 
     @staticmethod
-    def place_bid(db: Session, auction_id: int, bid_in: BidCreate) -> Bid:
+    def place_bid(db: Session, auction_id: int, bid_in: BidCreate, *, bidder_id: int) -> Bid:
         # PESSIMISTIC LOCK: with_for_update prevents concurrent race conditions
         auction = (
             db.query(Auction)
@@ -166,7 +166,7 @@ class AuctionService:
             )
 
         # Validate bidder exists and is strictly a student (Guards/Admins cannot own or bid on cycles)
-        bidder = db.get(User, bid_in.bidder_id)
+        bidder = db.get(User, bidder_id)
         if not bidder:
             raise HTTPException(status_code=404, detail="Bidder not found")
         if bidder.role not in (UserRole.STUDENT, "student"):
@@ -175,13 +175,13 @@ class AuctionService:
                 detail=f"Only students are eligible to participate and place bids in cycle auctions. User with role '{bidder.role}' cannot bid.",
             )
 
-        if auction.current_winner_id == bid_in.bidder_id:
+        if auction.current_winner_id == bidder_id:
             raise HTTPException(status_code=400, detail="You are already the highest bidder")
 
         # Create bid record
         new_bid = Bid(
             auction_id=auction.id,
-            bidder_id=bid_in.bidder_id,
+            bidder_id=bidder_id,
             amount=bid_in.amount,
             placed_at=now,
         )
@@ -189,7 +189,7 @@ class AuctionService:
 
         # Update auction state
         auction.current_highest_bid = bid_in.amount
-        auction.current_winner_id = bid_in.bidder_id
+        auction.current_winner_id = bidder_id
 
         is_extended = False
         time_left = auction.ends_at - now

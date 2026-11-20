@@ -5,7 +5,8 @@ from app.models.auction import AuctionStatus
 
 
 class BidCreate(BaseModel):
-    bidder_id: int
+    model_config = {"extra": "forbid"}
+
     amount: float = Field(..., gt=0)
 
 

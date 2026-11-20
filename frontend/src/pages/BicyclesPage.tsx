@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -34,10 +35,8 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     try {
       setLoading(true)
       const [bRes, uRes] = await Promise.all([
-        fetch(`${API}/bicycles/`, {
-          headers: { 'X-User-Id': String(user.id) },
-        }),
-        fetch(`${API}/auth/users`),
+        apiFetch(`${API}/bicycles/`),
+        apiFetch(`${API}/auth/users`),
       ])
       const b = await bRes.json()
       const u = await uRes.json()
@@ -78,11 +77,10 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     }
 
     try {
-      const res = await fetch(editingId ? `${API}/bicycles/${editingId}` : `${API}/bicycles/`, {
+      const res = await apiFetch(editingId ? `${API}/bicycles/${editingId}` : `${API}/bicycles/`, {
         method: editingId ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-User-Id': String(user.id),
         },
         body: JSON.stringify(payload),
       })
@@ -104,9 +102,8 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
   const remove = async (id: number) => {
     if (!confirm('Are you sure you want to delete this bicycle?')) return
     try {
-      const res = await fetch(`${API}/bicycles/${id}`, {
+      const res = await apiFetch(`${API}/bicycles/${id}`, {
         method: 'DELETE',
-        headers: { 'X-User-Id': String(user.id) },
       })
       if (res.ok) {
         setMsg({ text: 'Bicycle deleted', isError: false })
@@ -122,11 +119,10 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
 
   const transfer = async (id: number, newOwnerId: string) => {
     try {
-      const res = await fetch(`${API}/bicycles/${id}/transfer`, {
+      const res = await apiFetch(`${API}/bicycles/${id}/transfer`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-User-Id': String(user.id),
         },
         body: JSON.stringify({
           new_owner_id: newOwnerId ? Number(newOwnerId) : null,

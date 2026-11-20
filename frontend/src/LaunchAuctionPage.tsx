@@ -1,3 +1,4 @@
+import { apiFetch } from './lib/api'
 import PageHeader from './components/PageHeader'
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -16,12 +17,13 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
     bicycle_id: '',
     title: '',
     starting_price: '',
+    starts_at: '',
     ends_at: '',
     min_bid_increment: '20',
   })
 
   useEffect(() => {
-    fetch(`${API}/bicycles/`)
+    apiFetch(`${API}/bicycles/`)
       .then((r) => r.json())
       .then((data) => {
         setBicycles(Array.isArray(data) ? data : [])
@@ -45,13 +47,14 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
       title: form.title.trim(),
       starting_price: parseFloat(form.starting_price) || 0,
       min_bid_increment: parseFloat(form.min_bid_increment) || 20,
+      starts_at: new Date(form.starts_at).toISOString(),
       ends_at: new Date(form.ends_at).toISOString(),
       anti_snipe_trigger_window: 5,
       anti_snipe_extension_minutes: 5,
     }
 
     try {
-      const res = await fetch(`${API}/auctions/`, {
+      const res = await apiFetch(`${API}/auctions/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -157,6 +160,15 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
             </div>
           </div>
 
+          <div className="field">
+            <label>Auction Start Date & Time *</label>
+            <input
+              type="datetime-local"
+              value={form.starts_at}
+              onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
+              required
+            />
+          </div>
           <div className="field">
             <label>Auction End Date & Time *</label>
             <input

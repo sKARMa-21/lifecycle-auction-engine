@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
@@ -11,16 +11,14 @@ import { authStorage } from './lib/authStorage'
 import './App.css'
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(() => authStorage.getUser())
+  const user = useSyncExternalStore(authStorage.subscribe, authStorage.getUser)
 
-  const handleLogin = (u: User) => {
-    authStorage.setUser(u)
-    setUser(u)
+  const handleLogin = (u: User, token: string) => {
+    authStorage.setSession(u, token)
   }
 
   const handleLogout = () => {
     authStorage.clearUser()
-    setUser(null)
   }
 
   return (

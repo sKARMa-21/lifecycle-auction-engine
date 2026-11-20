@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -86,13 +87,11 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      fetch(`${API}/bicycles/`, {
-        headers: { 'X-User-Id': String(user.id) },
-      }).then((r) => {
+      apiFetch(`${API}/bicycles/`).then((r) => {
         if (!r.ok) throw new Error('Could not load dashboard data.')
         return r.json()
       }),
-      fetch(`${API}/auctions/`).then((r) => {
+      apiFetch(`${API}/auctions/`).then((r) => {
         if (!r.ok) throw new Error('Could not load dashboard data.')
         return r.json()
       }),
@@ -119,11 +118,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
     setStaffLoading(true)
 
     try {
-      const res = await fetch(`${API}/auth/staff`, {
+      const res = await apiFetch(`${API}/auth/staff`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-User-Id': String(user.id),
         },
         body: JSON.stringify({
           full_name: staffName,

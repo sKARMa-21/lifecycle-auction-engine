@@ -40,7 +40,7 @@ def place_bid(auction_id: int, bid_in: BidCreate, db: Session = Depends(get_db),
     bicycle = db.get(Bicycle, auction.bicycle_id)
     if user.role != "student" or user.id in (auction.created_by_id, bicycle.owner_id, bicycle.current_owner_id):
         raise HTTPException(403, "The seller and staff cannot bid")
-    if bid_in.bidder_id != user.id or not db.get(AuctionParticipant, (auction_id, user.id)):
+    if not db.get(AuctionParticipant, (auction_id, user.id)):
         raise HTTPException(403, "Join the auction before bidding")
     now = datetime.now(timezone.utc)
     if now < auction.starts_at or now >= auction.ends_at:
@@ -50,7 +50,7 @@ def place_bid(auction_id: int, bid_in: BidCreate, db: Session = Depends(get_db),
         raise HTTPException(409, f"The next bid must be exactly ₹{expected}. Refresh and try again.")
     if auction.status == AuctionStatus.SCHEDULED:
         auction.status = AuctionStatus.ACTIVE
-    return AuctionService.place_bid(db, auction_id, bid_in)
+    return AuctionService.place_bid(db, auction_id, bid_in, bidder_id=user.id)
 
 
 @router.get("/{auction_id}/participation")

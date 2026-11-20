@@ -1,36 +1,36 @@
-from typing import Optional, Callable
-from fastapi import Depends, HTTPException, Header, Query, status
+from typing import Callable
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from jwt import InvalidTokenError
 
 from app.db.session import get_db
 from app.models.user import User, UserRole
+from app.core.security import decode_access_token
+
+bearer = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
     db: Session = Depends(get_db),
-    x_user_id: Optional[int] = Header(None, alias="X-User-Id"),
-    current_user_id: Optional[int] = Query(None, alias="current_user_id"),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer),
 ) -> User:
-    """Resolve current user from X-User-Id header or current_user_id query parameter."""
-    resolved_id = x_user_id or current_user_id
-    if not resolved_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required. Please provide X-User-Id header or log in.",
-        )
-
-    user = db.get(User, resolved_id)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"User with ID {resolved_id} not found.",
-        )
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired authentication. Please log in.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if credentials is None:
+        raise unauthorized
+    try:
+        user_id = decode_access_token(credentials.credentials)
+    except (InvalidTokenError, ValueError, TypeError, OverflowError):
+        raise unauthorized
+    user = db.get(User, user_id)
+    if user is None:
+        raise unauthorized
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is deactivated.",
-        )
+        raise HTTPException(status_code=403, detail="User account is deactivated.")
     return user
 
 

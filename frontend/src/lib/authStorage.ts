@@ -1,32 +1,25 @@
 import type { User } from '../types/user'
 
-const STORAGE_KEY = 'cycle_engine_user'
+// Keep credentials in memory: navigating preserves login; reloading requires login.
+let user: User | null = null
+let token: string | null = null
+const listeners = new Set<() => void>()
 
 export const authStorage = {
-  getUser: (): User | null => {
-    try {
-      const data = sessionStorage.getItem(STORAGE_KEY)
-      return data ? JSON.parse(data) : null
-    } catch {
-      return null
-    }
+  getUser: () => user,
+  getToken: () => token,
+  subscribe: (listener: () => void) => {
+    listeners.add(listener)
+    return () => { listeners.delete(listener) }
   },
-  setUser: (user: User | null): void => {
-    try {
-      if (user) {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user))
-      } else {
-        sessionStorage.removeItem(STORAGE_KEY)
-      }
-    } catch {
-      // storage quota or disabled
-    }
+  setSession: (nextUser: User, accessToken: string) => {
+    user = nextUser
+    token = accessToken
+    listeners.forEach((listener) => listener())
   },
-  clearUser: (): void => {
-    try {
-      sessionStorage.removeItem(STORAGE_KEY)
-    } catch {
-      // ignore
-    }
-  }
+  clearUser: () => {
+    user = null
+    token = null
+    listeners.forEach((listener) => listener())
+  },
 }

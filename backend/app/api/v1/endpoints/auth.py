@@ -1,12 +1,12 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.user import User, UserRole
-from app.schemas.user import UserRegister, UserLogin, UserOut, StaffCreate, UserRoleUpdate
-from app.core.security import hash_password, verify_password
+from app.schemas.user import UserRegister, UserLogin, UserOut, StaffCreate, UserRoleUpdate, LoginResponse
+from app.core.security import hash_password, verify_password, create_access_token
 from app.api.v1.deps import get_current_user, require_roles
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -33,7 +33,7 @@ def register(body: UserRegister, db: Session = Depends(get_db)):
     return user
 
 
-@router.post("/login", response_model=UserOut)
+@router.post("/login", response_model=LoginResponse)
 def login(body: UserLogin, db: Session = Depends(get_db)):
     """User login verifying email and hashed credentials."""
     user = db.scalar(select(User).where(User.email == body.email))
@@ -41,7 +41,7 @@ def login(body: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User account is deactivated.")
-    return user
+    return {"access_token": create_access_token(user.id), "token_type": "bearer", "user": user}
 
 
 @router.get("/me", response_model=UserOut)
@@ -53,6 +53,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 @router.get("/users", response_model=List[UserOut])
 def list_users(
     role: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """List registered users, optionally filtered by role."""

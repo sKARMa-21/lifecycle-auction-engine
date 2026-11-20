@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import AuctionCountdownTimer from '../components/AuctionCountdownTimer'
 import { useState, useEffect, useCallback, useMemo } from 'react'
@@ -72,7 +73,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   const loadAuctions = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await fetch(`${API}/auctions/`)
+      const res = await apiFetch(`${API}/auctions/`)
       if (res.ok) {
         const data = await res.json()
         const list = Array.isArray(data) ? data : []
@@ -133,11 +134,17 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
     setMsg(null)
 
     try {
-      const res = await fetch(`${API}/auctions/${auction.id}/bids`, {
+      // Joining is idempotent and required by the bidding endpoint.
+      const joined = await apiFetch(`${API}/auctions/${auction.id}/participants`, { method: 'POST' })
+      if (!joined.ok) {
+        const error = await joined.json()
+        setMsg({ text: error.detail || 'Could not join auction.', isError: true })
+        return
+      }
+      const res = await apiFetch(`${API}/auctions/${auction.id}/bids`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bidder_id: user.id,
           amount: amount,
         }),
       })
