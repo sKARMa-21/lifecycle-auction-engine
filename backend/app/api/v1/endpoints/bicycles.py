@@ -1,257 +1,175 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.models.auction import Auction, AuctionStatus
 from app.models.bicycle import Bicycle
+from app.models.case import AuctionRequest
 from app.models.lifecycle import LifecycleEvent
 from app.models.user import User, UserRole
-from app.schemas.bicycle import (
-    BicycleCreate,
-    BicycleRead,
-    BicycleUpdate,
-    TransferOwnershipRequest,
-)
-from app.schemas.lifecycle import (
-    LifecycleEventRead,
-    MarkAuctionableRequest,
-    MarkSoldRequest,
-    ReclaimRequest,
-    TagAssetRequest,
-)
-from app.services.lifecycle_service import BicycleLifecycleService
+from app.schemas.bicycle import BicycleCreate, BicyclePublic, BicycleRead, BicycleUpdate, TransferOwnershipRequest
+from app.schemas.lifecycle import LifecycleEventRead, MarkSoldRequest, ReclaimRequest, TagAssetRequest
+from app.services import lifecycle_service
+from app.services.hostel import bike_hostel, can_manage
+from app.services.lifecycle_service import BicycleLifecycleService as Lifecycle
 from app.api.v1.deps import get_current_user, require_complete_profile, require_roles
 
 router = APIRouter(prefix="/bicycles", tags=["Bicycle Lifecycle"], dependencies=[Depends(require_complete_profile)])
+ADMINS = (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+STAFF = (UserRole.GUARD, *ADMINS)
+OPEN_AUCTION = (AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED)
+BicycleOut = Union[BicycleRead, BicyclePublic]
+admin_only = Depends(require_roles(*ADMINS))
 
 
 def get_bicycle_or_404(bicycle_id: int, db: Session) -> Bicycle:
     bicycle = db.scalar(select(Bicycle).where(Bicycle.id == bicycle_id).with_for_update())
     if not bicycle:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Bicycle with ID {bicycle_id} not found.",
-        )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Bicycle with ID {bicycle_id} not found.")
     return bicycle
 
 
-def get_user_or_404(user_id: int, db: Session) -> User:
+def ensure_student(user_id: Optional[int], db: Session) -> None:
+    if user_id is None:
+        return
     user = db.get(User, user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found.",
-        )
-    return user
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"User with ID {user_id} not found.")
+    if user.role != UserRole.STUDENT:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Only students can own bicycles. '{user.full_name}' is a '{user.role.value}'.")
 
 
-@router.post("/", response_model=BicycleRead, status_code=status.HTTP_201_CREATED)
-def create_bicycle(
-    payload: BicycleCreate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+def owner_of(bicycle: Bicycle) -> Optional[int]:
+    return bicycle.current_owner_id or bicycle.owner_id
+
+
+def ensure_manager(bicycle: Bicycle, user: User, db: Session) -> None:
+    if not can_manage(user, bike_hostel(db, bicycle)):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only manage bicycles from your own hostel.")
+
+
+def has_open_auction(bicycle: Bicycle, db: Session) -> bool:
+    return db.scalar(select(Auction.id).where(Auction.bicycle_id == bicycle.id, Auction.status.in_(OPEN_AUCTION))) is not None
+
+
+def present(bicycle: Bicycle, user: User, db: Session) -> BicycleOut:
+    """Admins get the full record; students and guards get only their allowed actions and a message."""
+    state, deadline = bicycle.status, bicycle.claim_deadline
+    claim_open = state == "asset" and deadline is not None and lifecycle_service.utcnow() < deadline
+    actions: List[str] = []
+    if user.role in ADMINS:
+        if can_manage(user, bike_hostel(db, bicycle)):
+            sale = ["mark_sold"] if has_open_auction(bicycle, db) else ["launch_auction", "mark_sold"]
+            actions = {"active": ["tag_asset", "edit"], "asset": ["reclaim", "promote"], "auctionable": sale}.get(state, [])
+        return BicycleRead.model_validate(bicycle).model_copy(update={"actions": actions})
+    message = None
+    if state == "asset" and deadline:
+        message = f"Impounded. Claim deadline: {deadline:%d %b %Y %H:%M} UTC." if claim_open else "Impounded. The claim period has ended."
+    elif state == "auctionable":
+        message = "In the campus auction pool."
+    if user.role == UserRole.GUARD and state == "active":
+        actions = ["tag_asset"]
+    elif user.role == UserRole.STUDENT and owner_of(bicycle) == user.id:
+        request = db.scalar(select(AuctionRequest).where(AuctionRequest.bicycle_id == bicycle.id).order_by(AuctionRequest.id.desc()).limit(1))
+        pending = request is not None and request.status == "pending"
+        actions = ["claim"] if claim_open else ["request_auction"] if state == "active" and not pending else []
+        if state == "active" and pending:
+            message = "Your auction request is waiting for your hostel admin."
+        elif state == "active" and request is not None and request.status == "rejected":
+            message = "Your auction request was rejected" + (f": {request.note}" if request.note else ".")
+    return BicyclePublic.model_validate(bicycle).model_copy(update={"actions": actions, "message": message})
+
+
+@router.post("/", response_model=BicycleOut, status_code=status.HTTP_201_CREATED)
+def create_bicycle(payload: BicycleCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role == UserRole.STUDENT:
         raise HTTPException(403, "Submit a bicycle registration request for approval.")
-
-    existing = db.scalar(select(Bicycle).where(Bicycle.asset_tag == payload.asset_tag))
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Bicycle with asset tag '{payload.asset_tag}' already exists.",
-        )
-
-    bike_data = payload.model_dump()
-    actor = current_user
-    if actor.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.GUARD):
-        # Staff cannot register bicycles as their own personal property
-        if bike_data.get("owner_id") == actor.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Guards and Admins cannot own bicycles. Only registered students can own a bicycle.",
-            )
-
-    # Validate that any assigned owner is strictly a STUDENT
-    if bike_data.get("owner_id") is not None:
-        target_owner = get_user_or_404(bike_data["owner_id"], db)
-        if target_owner.role not in (UserRole.STUDENT, "student"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Only students can own bicycles. User '{target_owner.full_name}' is a '{target_owner.role}' and cannot own a bicycle.",
-            )
-
-    bicycle = Bicycle(**bike_data)
-    if "current_owner_id" not in bike_data and bike_data.get("owner_id"):
-        bicycle.current_owner_id = bike_data["owner_id"]
+    if db.scalar(select(Bicycle).where(Bicycle.asset_tag == payload.asset_tag)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Bicycle with asset tag '{payload.asset_tag}' already exists.")
+    ensure_student(payload.owner_id, db)
+    bicycle = Bicycle(**payload.model_dump(), current_owner_id=payload.owner_id)
     db.add(bicycle)
     db.commit()
     db.refresh(bicycle)
-    return bicycle
+    return present(bicycle, current_user, db)
 
 
-@router.get("/", response_model=List[BicycleRead])
-def list_bicycles(
-    skip: int = 0,
-    limit: int = 100,
-    owner_id: Optional[int] = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Retrieve bicycles. If requester is a student, only their own bicycles are returned."""
-    caller = current_user
-
+@router.get("/", response_model=List[BicycleOut])
+def list_bicycles(skip: int = 0, limit: int = 100, owner_id: Optional[int] = None,
+                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Retrieve bicycles. Students get only their own; guards use the lookup instead."""
+    if current_user.role == UserRole.GUARD:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Guards find bicycles with the lookup.")
+    if current_user.role == UserRole.STUDENT:
+        owner_id = current_user.id
     query = select(Bicycle)
-
-    if caller and caller.role == UserRole.STUDENT:
-        # Students can ONLY see bicycles that belong to them
-        query = query.where(
-            (Bicycle.owner_id == caller.id) | (Bicycle.current_owner_id == caller.id)
-        )
-    elif owner_id is not None:
-        query = query.where(
-            (Bicycle.owner_id == owner_id) | (Bicycle.current_owner_id == owner_id)
-        )
-
-    query = query.offset(skip).limit(limit).order_by(Bicycle.id.desc())
-    return list(db.scalars(query).all())
+    if owner_id is not None:
+        query = query.where((Bicycle.owner_id == owner_id) | (Bicycle.current_owner_id == owner_id))
+    return [present(b, current_user, db) for b in db.scalars(query.offset(skip).limit(limit).order_by(Bicycle.id.desc()))]
 
 
-@router.get("/scan/lookup", response_model=BicycleRead)
-def lookup_bicycle(token: str, db: Session = Depends(get_db), actor: User = Depends(require_roles(UserRole.GUARD, UserRole.ADMIN, UserRole.SUPER_ADMIN))):
-    bicycle = db.scalar(select(Bicycle).where((Bicycle.asset_tag == token) | (Bicycle.qr_token == token)))
+@router.get("/scan/lookup", response_model=BicycleOut)
+def lookup_bicycle(token: str, db: Session = Depends(get_db), actor: User = Depends(require_roles(*STAFF))):
+    """Read-only lookup by QR token, asset tag or chassis/serial number."""
+    token = token.strip()
+    bicycle = db.scalar(select(Bicycle).where(
+        (Bicycle.asset_tag == token) | (Bicycle.qr_token == token) | (Bicycle.serial_number == token)))
     if not bicycle:
-        raise HTTPException(404, "No bicycle matches that tag or QR token")
-    return bicycle
+        raise HTTPException(404, "No bicycle matches that QR token, asset tag or serial number")
+    return present(bicycle, actor, db)
 
 
-@router.get("/{bicycle_id}", response_model=BicycleRead)
-def get_bicycle(
-    bicycle_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+@router.get("/{bicycle_id}", response_model=BicycleOut)
+def get_bicycle(bicycle_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Retrieve details and lifecycle state of a bicycle."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
-    caller = current_user
-
-    # If caller is a student, verify they own the bicycle or it is in an auctionable state
-    if caller and caller.role == UserRole.STUDENT:
-        is_owner = (bicycle.owner_id == caller.id) or (bicycle.current_owner_id == caller.id)
-        # Students can view cycles they own or cycles that are currently active in auction / auctionable
-        if not is_owner and bicycle.status not in ("auctionable", "sold"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: You do not own this bicycle.",
-            )
-
-    return bicycle
+    if (current_user.role == UserRole.STUDENT and current_user.id not in (bicycle.owner_id, bicycle.current_owner_id)
+            and bicycle.status not in ("auctionable", "sold")):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied: You do not own this bicycle.")
+    return present(bicycle, current_user, db)
 
 
-@router.put("/{bicycle_id}", response_model=BicycleRead)
-def update_bicycle(
-    bicycle_id: int,
-    payload: BicycleUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Update details of a bicycle."""
-    bicycle = get_bicycle_or_404(bicycle_id, db)
-    update_data = payload.model_dump(exclude_unset=True)
-
-    actor = current_user
-
-    # Students can only update their own bicycle and cannot change owner_id directly
-    if actor and actor.role == UserRole.STUDENT:
-        is_owner = (bicycle.owner_id == actor.id) or (bicycle.current_owner_id == actor.id)
-        if not is_owner:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not own this bicycle and cannot modify it.",
-            )
-        update_data.pop("owner_id", None)
-
-    if "owner_id" in update_data and update_data["owner_id"] is not None:
-        target_owner = get_user_or_404(update_data["owner_id"], db)
-        if target_owner.role not in (UserRole.STUDENT, "student"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Only students can own bicycles. User '{target_owner.full_name}' is a '{target_owner.role}' and cannot own a bicycle.",
-            )
-        bicycle.current_owner_id = update_data["owner_id"]
-
-    for field, value in update_data.items():
+def _save(bicycle: Bicycle, user: User, db: Session, **fields) -> BicycleOut:
+    for field, value in fields.items():
         setattr(bicycle, field, value)
-
     db.commit()
     db.refresh(bicycle)
-    return bicycle
+    return present(bicycle, user, db)
 
 
-@router.patch("/{bicycle_id}/transfer", response_model=BicycleRead)
-def transfer_bicycle_ownership(
-    bicycle_id: int,
-    payload: TransferOwnershipRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Transfer ownership of a bicycle to another user.
-    Students can ONLY transfer bicycles that they own.
-    Admins and Super Admins can transfer any bicycle.
-    """
+@router.put("/{bicycle_id}", response_model=BicycleOut)
+def update_bicycle(bicycle_id: int, payload: BicycleUpdate, current_user: User = admin_only, db: Session = Depends(get_db)):
+    """Update details of a bicycle (the responsible hostel's admin or a super admin)."""
+    bicycle, data = get_bicycle_or_404(bicycle_id, db), payload.model_dump(exclude_unset=True)
+    ensure_manager(bicycle, current_user, db)
+    if data.get("owner_id") is not None:
+        ensure_student(data["owner_id"], db)
+        data["current_owner_id"] = data["owner_id"]
+    return _save(bicycle, current_user, db, **data)
+
+
+@router.patch("/{bicycle_id}/transfer", response_model=BicycleOut)
+def transfer_bicycle_ownership(bicycle_id: int, payload: TransferOwnershipRequest, current_user: User = admin_only,
+                               db: Session = Depends(get_db)):
+    """Transfer ownership of a bicycle (the responsible hostel's admin or a super admin)."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
-
-    actor = current_user
-
-    # Verify authorization: Must be owner or admin/super_admin
-    is_owner = (bicycle.owner_id == actor.id) or (bicycle.current_owner_id == actor.id)
-    is_admin = actor.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN, "admin", "super_admin")
-
-    if not (is_owner or is_admin):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not own this bicycle and cannot transfer its ownership.",
-        )
-
-    if payload.new_owner_id is not None:
-        new_owner = get_user_or_404(payload.new_owner_id, db)
-        if new_owner.role not in (UserRole.STUDENT, "student"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Only students can own bicycles. Ownership cannot be transferred to a user with role '{new_owner.role}'.",
-            )
-
-    bicycle.owner_id = payload.new_owner_id
-    bicycle.current_owner_id = payload.new_owner_id
-    db.commit()
-    db.refresh(bicycle)
-    return bicycle
+    ensure_manager(bicycle, current_user, db)
+    ensure_student(payload.new_owner_id, db)
+    return _save(bicycle, current_user, db, owner_id=payload.new_owner_id, current_owner_id=payload.new_owner_id)
 
 
 @router.delete("/{bicycle_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_bicycle(
-    bicycle_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Delete a bicycle from the system."""
+def delete_bicycle(bicycle_id: int, current_user: User = admin_only, db: Session = Depends(get_db)):
+    """Delete a bicycle from the system (the responsible hostel's admin or a super admin)."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
-
-    actor = current_user
-    if actor and actor.role == UserRole.STUDENT:
-        is_owner = (bicycle.owner_id == actor.id) or (bicycle.current_owner_id == actor.id)
-        if not is_owner:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not own this bicycle and cannot delete it.",
-            )
-
+    ensure_manager(bicycle, current_user, db)
     db.delete(bicycle)
     db.commit()
-    return None
 
 
-def _transition(bicycle_id: int, db: Session, actor: User, payload_actor_id: Optional[int], action, **kwargs) -> Bicycle:
+def _transition(bicycle_id: int, db: Session, actor: User, payload_actor_id: Optional[int], action, **kwargs) -> BicycleOut:
     """Lock the bicycle, verify the payload actor is the signed-in user, apply the transition, commit."""
     bicycle = get_bicycle_or_404(bicycle_id, db)
     if payload_actor_id is not None and payload_actor_id != actor.id:
@@ -259,69 +177,42 @@ def _transition(bicycle_id: int, db: Session, actor: User, payload_actor_id: Opt
     action(bicycle=bicycle, actor=actor, db=db, **kwargs)
     db.commit()
     db.refresh(bicycle)
-    return bicycle
+    return present(bicycle, actor, db)
 
 
-@router.post("/{bicycle_id}/tag-asset", response_model=BicycleRead)
-def tag_as_asset(bicycle_id: int, payload: TagAssetRequest, db: Session = Depends(get_db),
-                 user: User = Depends(get_current_user)):
-    """Guard/admin records neglect and begins the owner's 15-day claim period."""
-    return _transition(bicycle_id, db, user, payload.actor_id, BicycleLifecycleService.tag_as_asset,
-                       location=payload.location, notes=payload.notes, proof_image_url=payload.proof_image_url)
+@router.post("/{bicycle_id}/tag-asset", response_model=BicycleOut)
+def tag_as_asset(bicycle_id: int, payload: TagAssetRequest, db: Session = Depends(get_db), user: User = Depends(require_roles(*STAFF))):
+    """Accepted scan: guard/admin records neglect and begins the owner's 15-day claim period."""
+    return _transition(bicycle_id, db, user, payload.actor_id, Lifecycle.tag_as_asset, **payload.model_dump(exclude={"actor_id"}))
 
 
-@router.post("/{bicycle_id}/set-auctionable", response_model=BicycleRead)
-def set_auctionable(bicycle_id: int, payload: MarkAuctionableRequest, db: Session = Depends(get_db),
-                    user: User = Depends(get_current_user)):
-    """Student owner moves their ACTIVE cycle straight to AUCTIONABLE."""
-    return _transition(bicycle_id, db, user, payload.actor_id,
-                       BicycleLifecycleService.mark_as_auctionable_by_owner, notes=payload.notes)
+@router.post("/{bicycle_id}/reclaim", response_model=BicycleOut)
+def reclaim_bicycle(bicycle_id: int, payload: ReclaimRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Owner claims an impounded bicycle while now < claim_deadline."""
+    return _transition(bicycle_id, db, user, payload.actor_id, Lifecycle.reclaim_bicycle, notes=payload.notes)
 
 
-@router.post("/{bicycle_id}/reclaim", response_model=BicycleRead)
-def reclaim_bicycle(bicycle_id: int, payload: ReclaimRequest, db: Session = Depends(get_db),
-                    user: User = Depends(get_current_user)):
-    """Owner reclaims a reported bicycle within 15 days."""
-    return _transition(bicycle_id, db, user, payload.actor_id, BicycleLifecycleService.reclaim_bicycle,
-                       notes=payload.notes)
-
-
-@router.post("/{bicycle_id}/surrender", response_model=BicycleRead)
-def surrender_to_auction(bicycle_id: int, payload: ReclaimRequest, db: Session = Depends(get_db),
-                         user: User = Depends(get_current_user)):
-    """Owner surrenders an ASSET bicycle to AUCTIONABLE, skipping the remaining grace period."""
-    return _transition(bicycle_id, db, user, payload.actor_id, BicycleLifecycleService.surrender_to_auction,
-                       notes=payload.notes)
-
-
-@router.post("/{bicycle_id}/promote-auctionable", response_model=BicycleRead)
-def promote_auctionable(bicycle_id: int, db: Session = Depends(get_db),
-                        user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
+@router.post("/{bicycle_id}/promote-auctionable", response_model=BicycleOut)
+def promote_auctionable(bicycle_id: int, db: Session = Depends(get_db), user: User = admin_only):
     """Admin promotes an ASSET after the owner's 15-day claim period."""
-    return _transition(bicycle_id, db, user, None, BicycleLifecycleService.promote_asset_to_auctionable)
+    return _transition(bicycle_id, db, user, None, Lifecycle.promote_asset_to_auctionable)
 
 
-@router.post("/cron/process-expired-assets", response_model=List[BicycleRead])
-def process_expired_assets(db: Session = Depends(get_db),
-                           user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
+@router.post("/cron/process-expired-assets", response_model=List[BicycleOut])
+def process_expired_assets(db: Session = Depends(get_db), user: User = admin_only):
     """Manual trigger for the expiry job (it also runs every 60s in app/workers/asset_expiry.py)."""
-    return BicycleLifecycleService.process_expired_assets(db)
+    return [present(b, user, db) for b in Lifecycle.process_expired_assets(db)]
 
 
-@router.post("/{bicycle_id}/mark-sold", response_model=BicycleRead)
-def mark_sold(bicycle_id: int, payload: MarkSoldRequest, db: Session = Depends(get_db),
-              user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
+@router.post("/{bicycle_id}/mark-sold", response_model=BicycleOut)
+def mark_sold(bicycle_id: int, payload: MarkSoldRequest, db: Session = Depends(get_db), user: User = admin_only):
     """Admin finalizes AUCTIONABLE -> SOLD and records sale analytics."""
-    return _transition(bicycle_id, db, user, None, BicycleLifecycleService.mark_as_sold,
-                       **payload.model_dump(exclude={"actor_id"}))
+    ensure_manager(get_bicycle_or_404(bicycle_id, db), user, db)
+    return _transition(bicycle_id, db, user, None, Lifecycle.mark_as_sold, **payload.model_dump(exclude={"actor_id"}))
 
 
 @router.get("/{bicycle_id}/events", response_model=List[LifecycleEventRead])
-def get_lifecycle_events(bicycle_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Audit history of a bicycle (owner or staff only)."""
-    bicycle = get_bicycle_or_404(bicycle_id, db)
-    if user.role == UserRole.STUDENT and (bicycle.current_owner_id or bicycle.owner_id) != user.id:
-        raise HTTPException(403, "Only the owner or staff can view inspection evidence")
-    return list(db.scalars(
-        select(LifecycleEvent).where(LifecycleEvent.bicycle_id == bicycle_id).order_by(LifecycleEvent.created_at.asc())
-    ).all())
+def get_lifecycle_events(bicycle_id: int, db: Session = Depends(get_db), user: User = admin_only):
+    """Internal audit history of a bicycle (admins only)."""
+    get_bicycle_or_404(bicycle_id, db)
+    return list(db.scalars(select(LifecycleEvent).where(LifecycleEvent.bicycle_id == bicycle_id).order_by(LifecycleEvent.created_at.asc())))
