@@ -17,6 +17,5 @@ def upgrade():
 
 
 def downgrade():
-    # Keep photo evidence intact rather than truncating existing reports.
     op.drop_table("auction_participants")
     op.drop_column("auctions", "starts_at")

@@ -19,7 +19,7 @@ class UnauthorizedTransitionError(LifecycleDomainError):
 
 
 class GracePeriodNotExpiredError(LifecycleDomainError):
-    """Raised when attempting to promote an asset to auctionable before the 30-day grace period has passed."""
+    """Raised when attempting to promote an asset to auctionable before the 15-day grace period has passed."""
     pass
 
 

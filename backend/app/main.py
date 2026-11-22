@@ -19,7 +19,6 @@ from app.core.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure initial Super Admin is bootstrapped
     try:
         from app.db.session import SessionLocal
         from app.models.user import User, UserRole
@@ -75,7 +74,6 @@ app.include_router(api_router, prefix="/api/v1")
 app.include_router(websocket_router)
 
 
-# Global exception handlers for domain errors
 @app.exception_handler(InvalidStateTransitionError)
 async def invalid_transition_handler(request: Request, exc: InvalidStateTransitionError):
     return JSONResponse(status_code=400, content={"detail": str(exc)})

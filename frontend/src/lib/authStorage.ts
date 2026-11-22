@@ -1,7 +1,5 @@
 import type { User } from '../types/user'
 
-// The session is persisted in localStorage so a page refresh keeps the user signed in.
-// An expired token is discarded on load; any 401 from the API also clears the session (see api.ts).
 const STORAGE_KEY = 'auth_session'
 
 interface Session {
@@ -20,36 +18,27 @@ function tokenExpired(token: string): boolean {
 
 function readSession(): Session | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = sessionStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const session = JSON.parse(raw) as Session
     if (session?.user && session?.token && !tokenExpired(session.token)) return session
   } catch {
-    // Corrupt or inaccessible storage: treat as signed out.
   }
-  try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+  try { sessionStorage.removeItem(STORAGE_KEY) } catch {}
   return null
 }
 
 function writeSession(session: Session | null) {
   try {
-    if (session) localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
-    else localStorage.removeItem(STORAGE_KEY)
+    if (session) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session))
+    else sessionStorage.removeItem(STORAGE_KEY)
   } catch {
-    // Storage unavailable (e.g. private mode): the session still works in memory.
   }
 }
 
 let session: Session | null = readSession()
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((listener) => listener())
-
-// Keep tabs in sync: logging in or out in one tab applies to the others.
-window.addEventListener('storage', (event) => {
-  if (event.key !== STORAGE_KEY) return
-  session = readSession()
-  notify()
-})
 
 export const authStorage = {
   getUser: () => session?.user ?? null,

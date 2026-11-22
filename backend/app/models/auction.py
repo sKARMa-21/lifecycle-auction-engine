@@ -39,7 +39,6 @@ class Auction(Base):
     payment_deadline = Column(DateTime(timezone=True), nullable=True)
     extension_count = Column(Integer, nullable=False, default=0)
 
-    # Anti-sniping parameters (in minutes)
     anti_snipe_trigger_window = Column(Integer, default=5)
     anti_snipe_extension_minutes = Column(Integer, default=5)
 

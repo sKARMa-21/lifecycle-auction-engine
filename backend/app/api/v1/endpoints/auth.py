@@ -35,7 +35,6 @@ def register(body: UserRegister, db: Session = Depends(get_db)):
     if exists:
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # Strictly assign STUDENT role to public registrations.
     user = User(
         full_name=body.full_name,
         email=body.email,

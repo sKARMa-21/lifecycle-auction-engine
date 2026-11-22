@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from app.core.config import settings
 
-# basic salt + sha256 for now, enough for cs699 demo
 def hash_password(password: str) -> str:
     salt = os.urandom(8).hex()
     h = hashlib.sha256((salt + password).encode()).hexdigest()

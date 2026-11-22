@@ -35,7 +35,6 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # Role stored as enum
     role: Mapped[UserRole] = mapped_column(
         SQLEnum(UserRole, name="user_role", values_callable=lambda x: [e.value for e in x]),
         default=UserRole.STUDENT,
@@ -55,10 +54,7 @@ class User(Base):
         nullable=False,
     )
 
-    # Relationships
-    # `owned_bicycles` via owner_id — used by lifecycle service
     owned_bicycles = relationship("Bicycle", back_populates="owner", foreign_keys="Bicycle.owner_id")
-    # `bicycles` via current_owner_id — used by skarma-dev / QR sticker models
     bicycles: Mapped[List["Bicycle"]] = relationship(
         "Bicycle", back_populates="current_owner", foreign_keys="Bicycle.current_owner_id"
     )

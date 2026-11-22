@@ -22,5 +22,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # PostgreSQL does not natively support removing an enum value from an enum type.
     pass

@@ -17,14 +17,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 0. Clean up legacy tables from 0001 if present
     op.execute("DROP TABLE IF EXISTS bids CASCADE")
     op.execute("DROP TABLE IF EXISTS auctions CASCADE")
     op.execute("DROP TABLE IF EXISTS lifecycle_events CASCADE")
     op.execute("DROP TABLE IF EXISTS claims CASCADE")
     op.execute("DROP TABLE IF EXISTS notifications CASCADE")
 
-    # 1. Custom Enum Types
     user_role_enum = postgresql.ENUM("admin", "student", "guard", name="user_role", create_type=False)
     user_role_enum.create(op.get_bind(), checkfirst=True)
 
@@ -40,7 +38,6 @@ def upgrade() -> None:
     sticker_status_enum = postgresql.ENUM("active", "expired", "replaced", "revoked", name="sticker_status", create_type=False)
     sticker_status_enum.create(op.get_bind(), checkfirst=True)
 
-    # 2. Users Table Updates (preserves 0002_cycle_lifecycle_fields + adds v2 fields)
     op.execute("ALTER TABLE users DROP COLUMN IF EXISTS role CASCADE")
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role user_role NOT NULL DEFAULT 'student'")
     op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_number VARCHAR(30)")
@@ -55,7 +52,6 @@ def upgrade() -> None:
 
     op.execute("CREATE INDEX IF NOT EXISTS idx_users_degree_end_date ON users (degree_end_date)")
 
-    # 3. QR Stickers Table
     op.execute("DROP TABLE IF EXISTS qr_stickers CASCADE")
     op.create_table(
         "qr_stickers",
@@ -74,7 +70,6 @@ def upgrade() -> None:
     )
     op.create_index("idx_qr_stickers_code", "qr_stickers", ["sticker_code"])
 
-    # 4. Bicycles Table Updates (preserves 0002_cycle_lifecycle_fields + adds v2 fields)
     for col in [
         "brand", "model", "color", "created_at", "updated_at",
         "current_owner_id", "owner_id", "active_sticker_id", "current_state",
@@ -84,7 +79,6 @@ def upgrade() -> None:
     ]:
         op.execute(f"ALTER TABLE bicycles DROP COLUMN IF EXISTS {col} CASCADE")
 
-    # Fields from 0002_cycle_lifecycle_fields
     op.add_column("bicycles", sa.Column("owner_id", sa.Integer(), nullable=True))
     op.create_foreign_key(
         "fk_bicycles_owner_id_users",
@@ -104,7 +98,6 @@ def upgrade() -> None:
     op.add_column("bicycles", sa.Column("base_price_set", sa.Numeric(12, 2), nullable=True))
     op.add_column("bicycles", sa.Column("sold_price", sa.Numeric(12, 2), nullable=True))
 
-    # Fields from 0002_lifecycle_auction_v2
     op.add_column("bicycles", sa.Column("current_owner_id", sa.Integer(), nullable=True))
     op.add_column("bicycles", sa.Column("active_sticker_id", sa.Integer(), nullable=True))
     op.add_column("bicycles", sa.Column("current_state", cycle_state_enum, nullable=False, server_default="active"))
@@ -124,7 +117,6 @@ def upgrade() -> None:
     op.create_index("idx_bicycles_state", "bicycles", ["current_state"])
     op.create_index("idx_bicycles_tagged_asset", "bicycles", ["tagged_as_asset_at"], postgresql_where=sa.text("current_state = 'asset'"))
 
-    # 5. Lifecycle Events Table
     op.execute("DROP TABLE IF EXISTS lifecycle_events CASCADE")
     op.create_table(
         "lifecycle_events",
@@ -143,7 +135,6 @@ def upgrade() -> None:
     )
     op.create_index("idx_lifecycle_events_bicycle", "lifecycle_events", ["bicycle_id"])
 
-    # 6. Auctions Table
     op.execute("DROP TABLE IF EXISTS auctions CASCADE")
     op.create_table(
         "auctions",
@@ -171,7 +162,6 @@ def upgrade() -> None:
     )
     op.create_index("idx_auctions_status_ends", "auctions", ["status", "ends_at"])
 
-    # 7. Bids Table
     op.execute("DROP TABLE IF EXISTS bids CASCADE")
     op.create_table(
         "bids",
@@ -194,7 +184,6 @@ def downgrade() -> None:
     op.drop_table("lifecycle_events")
     op.drop_table("qr_stickers")
 
-    # Drop bicycle columns and constraints
     for col in [
         "sold_price", "base_price_set", "years_used", "market_value", "cycle_condition",
         "qr_token", "asset_tagged_at", "tagged_as_asset_at", "last_known_location",
@@ -203,7 +192,6 @@ def downgrade() -> None:
     ]:
         op.execute(f"ALTER TABLE bicycles DROP COLUMN IF EXISTS {col} CASCADE")
 
-    # Drop user columns
     for col in [
         "room_number", "hostel_name", "degree_end_date", "course_duration_years",
         "joining_year", "enrollment_year", "degree_duration_years", "degree_type",

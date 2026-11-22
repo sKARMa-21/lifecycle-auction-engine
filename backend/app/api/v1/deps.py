@@ -37,7 +37,6 @@ def get_current_user(
 def require_roles(*allowed_roles: UserRole) -> Callable[[User], User]:
     """Dependency factory enforcing that the authenticated user possesses one of the allowed roles."""
     def role_checker(current_user: User = Depends(get_current_user)) -> User:
-        # Check against enum values or strings
         allowed_str = {r.value if isinstance(r, UserRole) else str(r) for r in allowed_roles}
         user_role_str = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role)
 

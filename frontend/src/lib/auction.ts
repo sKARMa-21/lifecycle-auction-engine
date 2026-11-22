@@ -9,7 +9,6 @@ export const nextBid = (auction: Auction) => auction.current_winner_id != null
     ? Math.round((auction.current_highest_bid + auction.min_bid_increment) * 100) / 100
     : auction.starting_price
 
-// Show the actual top five, plus the viewer once even when they have not bid.
 export function poolBidders(bids: Bid[], userId: number) {
     const best = new Map<number, number>()
     for (const bid of bids) best.set(bid.bidder_id, Math.max(best.get(bid.bidder_id) ?? 0, bid.amount))
