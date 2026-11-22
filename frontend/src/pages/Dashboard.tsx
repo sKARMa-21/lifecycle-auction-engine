@@ -151,7 +151,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         <div className="kpi-grid" aria-label="Bicycle statistics">
           {bicycleStats.map(({ status, label }) => (
             <div className="kpi-card" key={status}>
-              <span className={`kpi-label status-badge status-${status}`}>{label}</span>
+              <h2 className="kpi-label">{label}</h2>
               <strong className={`kpi-num status-text-${status}`}>
                 {bicycleError ? '—' : bicycles?.filter((bike) => bike.status === status).length ?? '…'}
               </strong>

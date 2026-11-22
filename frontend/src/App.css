@@ -403,8 +403,28 @@ body {
   text-decoration: none;
 }
 
+.dashboard-actions .card-wide,
+.kpi-card {
+  background-color: var(--dashboard-tint, #E8F2FC);
+  border: 0;
+  box-shadow: 0 2px 6px #1e293b0d, 0 5px 14px #1e293b08;
+}
+
+.kpi-card:has(.status-text-active),
+.dashboard-actions a[href$="/bicycles/registrations"] { --dashboard-tint: #E3F6EB; }
+.kpi-card:has(.status-text-asset),
+.dashboard-actions a[href$="/launch-auction"] { --dashboard-tint: #FFF2D7; }
+.kpi-card:has(.status-text-auctionable),
+.dashboard-actions a[href$="/requests"] { --dashboard-tint: #EFE9FC; }
+.kpi-card:has(.status-text-sold) { --dashboard-tint: #FAEAF1; }
+
 .dashboard-actions a:hover {
-  border-color: var(--accent);
+  box-shadow: 0 4px 12px #1e293b1a;
+}
+
+.dashboard-actions a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .dashboard-note {
@@ -412,6 +432,8 @@ body {
   font-size: 0.875rem;
   line-height: 1.45;
 }
+
+.dashboard-actions .dashboard-note { color: var(--state-sold-text); }
 
 .dashboard-table {
   max-height: 420px;
@@ -459,22 +481,22 @@ body {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 135px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 125px), 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
 
 .kpi-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 20px;
+  padding: clamp(14px, 2.3vw, 20px);
   display: flex;
   flex-direction: column;
 }
 
 .kpi-label {
-  align-self: flex-start;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.3;
   margin-bottom: 6px;
 }
 
@@ -833,6 +855,36 @@ body {
   background: #FFF;
   color: var(--text);
   flex: 1 1 160px;
+}
+
+.registration-fields,
+.registration-uploads {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.registration-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.registration-uploads { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+
+.registration-form .field {
+  margin: 0;
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.registration-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
+@media (max-width: 740px) {
+  .registration-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .registration-fields input { font-size: 1rem; }
+  .registration-form :is(input, button) { min-height: 44px; }
 }
 
 .btn-sm {

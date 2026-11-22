@@ -35,7 +35,7 @@ function PhotoInput({ name, label }: { name: string; label: string }) {
           event.target.setCustomValidity(file && file.size > 2 * 1024 * 1024 ? 'Choose a photo of 2 MB or less.' : '')
           setPreview(file && file.size <= 2 * 1024 * 1024 ? URL.createObjectURL(file) : '')
         }} />
-      {preview && <img src={preview} alt={label} style={{ width: '100%', maxWidth: 220, maxHeight: 140, objectFit: 'contain' }} />}
+      {preview && <img src={preview} alt={label} style={{ width: '100%', maxWidth: 160, maxHeight: 100, objectFit: 'contain' }} />}
     </label>
   )
 }
@@ -126,14 +126,14 @@ export default function RegistrationsPage({ user, onLogout }: { user: User; onLo
         <div className="card-wide">
           <h3>Register New Cycle</h3>
           <p className="subtitle">Your hostel admin will review your details and photos. Each image can be up to 2 MB.</p>
-          <form onSubmit={(event) => void save(event)}>
-            <div className="form-inline">
+          <form className="registration-form" onSubmit={(event) => void save(event)}>
+            <div className="registration-fields">
               {[['serial_number', 'Chassis number', 120], ['brand', 'Brand', 100],
                 ['model', 'Model', 100], ['color', 'Color', 60]].map(([name, label, length]) => (
                 <label key={name} className="field">{label}<input name={String(name)} maxLength={Number(length)} required /></label>
               ))}
             </div>
-            <div className="form-inline">
+            <div className="registration-uploads">
               {photos.map(([kind, label]) => <PhotoInput key={kind} name={kind} label={label} />)}
             </div>
             <button className="btn-submit btn-sm" disabled={busy}>{busy ? 'Submitting…' : 'Submit for approval'}</button>
