@@ -1,6 +1,6 @@
 import { authStorage } from './authStorage'
 
-export const API_BASE = 'http://127.0.0.1:8000/api/v1'
+export const API_BASE = '/api/v1'
 
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = authStorage.getToken()

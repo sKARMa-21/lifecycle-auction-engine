@@ -12,10 +12,11 @@ export default function BicycleLookup({ autoFocus = false }: { autoFocus?: boole
   async function lookup(event: FormEvent) {
     event.preventDefault()
     if (!token.trim()) return
+    const code = token.trim().match(/\/s\/([^/?#]+)/)?.[1] ?? token.trim()
     setError('')
     setLoading(true)
     try {
-      const bicycle = await apiData<Bicycle>(`/bicycles/scan/lookup?token=${encodeURIComponent(token.trim())}`)
+      const bicycle = await apiData<Bicycle>(`/bicycles/scan/lookup?token=${encodeURIComponent(code)}`)
       navigate(`/bicycles/${bicycle.id}`)
     } catch (err) {
       setError((err as Error).message)

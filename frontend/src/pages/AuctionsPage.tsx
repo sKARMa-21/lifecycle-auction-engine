@@ -7,7 +7,7 @@ import type { Auction, AuctionBidEvent } from '../types/auction'
 import type { User } from '../types/user'
 import { useAuctionSubscriptions } from '../lib/useAuctionWebSocket'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = '/api/v1'
 
 interface AuctionsPageProps {
   user: User

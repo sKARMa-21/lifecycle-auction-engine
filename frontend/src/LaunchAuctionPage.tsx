@@ -6,7 +6,7 @@ import type { User } from './types/user'
 import type { Bicycle } from './types/bicycle'
 import type { Auction } from './types/auction'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = '/api/v1'
 
 const toLocalInput = (iso: string) => new Date(new Date(iso).getTime() - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 

@@ -1195,3 +1195,45 @@ body {
   display: grid;
   place-items: center;
 }
+
+.qr-sticker {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 16px;
+  padding: 14px 18px;
+  background: #FFFFFF;
+  color: #191C1E;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.qr-sticker span {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+}
+
+.qr-print {
+  display: block;
+  width: auto;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .qr-sticker,
+  .qr-sticker * {
+    visibility: visible;
+  }
+
+  .qr-sticker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin: 0;
+  }
+}

@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom'
 import type { StudentSummary, User } from '../types/user'
 import type { Bicycle } from '../types/bicycle'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = '/api/v1'
 
 interface BicyclesPageProps {
   user: User
