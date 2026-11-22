@@ -1,14 +1,19 @@
-import { apiFetch } from './lib/api'
+import { apiData, apiFetch } from './lib/api'
 import PageHeader from './components/PageHeader'
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { User } from './types/user'
 import type { Bicycle } from './types/bicycle'
+import type { Auction } from './types/auction'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 
+const toLocalInput = (iso: string) => new Date(new Date(iso).getTime() - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+
 export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const editId = params.get('edit')
   const [bicycles, setBicycles] = useState<Bicycle[]>([])
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
@@ -23,13 +28,21 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
   })
 
   useEffect(() => {
+    if (editId) {
+      apiData<Auction>(`/auctions/${editId}`).then(async (a) => {
+        setBicycles([await apiData<Bicycle>(`/bicycles/${a.bicycle_id}`)])
+        setForm({ bicycle_id: String(a.bicycle_id), title: a.title, starting_price: String(a.starting_price), starts_at: toLocalInput(a.starts_at),
+          ends_at: toLocalInput(a.ends_at), min_bid_increment: String(a.min_bid_increment) })
+      }).catch(() => setError('Failed to load auction'))
+      return
+    }
     apiFetch(`${API}/bicycles/`)
       .then((r) => r.json())
       .then((data) => {
-        setBicycles(Array.isArray(data) ? data : [])
+        setBicycles((Array.isArray(data) ? data as Bicycle[] : []).filter((b) => b.status === 'auctionable' && b.actions.includes('launch_auction')))
       })
       .catch(() => setError('Failed to load bicycles'))
-  }, [])
+  }, [editId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,14 +67,15 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
     }
 
     try {
-      const res = await apiFetch(`${API}/auctions/`, {
-        method: 'POST',
+      const { bicycle_id: _bicycle, created_by_id: _creator, ...changes } = payload
+      const res = await apiFetch(editId ? `${API}/auctions/${editId}` : `${API}/auctions/`, {
+        method: editId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(editId ? changes : payload),
       })
       if (res.ok) {
-        setMsg('Auction launched successfully! Redirecting...')
-        setTimeout(() => navigate('/dashboard'), 1000)
+        setMsg(editId ? 'Auction updated! Redirecting...' : 'Auction launched successfully! Redirecting...')
+        setTimeout(() => navigate(editId ? '/auctions' : '/dashboard'), 1000)
       } else {
         const err = await res.json()
         setError(err.detail || 'Failed to launch auction')
@@ -71,7 +85,6 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
     }
   }
 
-  // Auto-fill title when a bicycle is picked
   const handleBicycleChange = (bikeId: string) => {
     setForm((prev) => {
       const selectedBike = bicycles.find((b) => b.id === Number(bikeId))
@@ -90,7 +103,7 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
     <div className="page-wide">
       <PageHeader
         badge="CycleEngine"
-        title="Launch New Auction"
+        title={editId ? 'Edit Scheduled Auction' : 'Launch New Auction'}
         role={user.role}
         onLogout={onLogout}
         links={[
@@ -104,7 +117,11 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
 
       <div className="card-wide" style={{ maxWidth: '700px', margin: '0 auto' }}>
         <h3>Auction Configuration</h3>
-        <p className="subtitle">Select a bicycle and define auction rules for campus bidding.</p>
+        <p className="subtitle">
+          {editId
+            ? 'Scheduled auctions can be edited until bidding opens.'
+            : 'Choose a bicycle from the auction pool (approved requests and unclaimed impounded bicycles) and define auction rules.'}
+        </p>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="field">
@@ -114,11 +131,12 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
               onChange={(e) => handleBicycleChange(e.target.value)}
               className="select-input"
               required
+              disabled={!!editId}
             >
-              <option value="">-- Choose a Bicycle ({bicycles.length} available) --</option>
+              <option value="">-- Choose a Bicycle ({bicycles.length} in the pool) --</option>
               {bicycles.map((b) => (
                 <option key={b.id} value={b.id}>
-                  #{b.id} — Tag: {b.asset_tag} | {[b.brand, b.model, b.color].filter(Boolean).join(' ') || 'Bicycle'} [Status: {b.status}]
+                  #{b.id} — Tag: {b.asset_tag} | {[b.brand, b.model, b.color].filter(Boolean).join(' ') || 'Bicycle'}
                 </option>
               ))}
             </select>
@@ -181,7 +199,7 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
 
           <div className="btn-row" style={{ marginTop: '8px' }}>
             <button type="submit" className="btn-submit">
-              Launch Auction
+              {editId ? 'Save Changes' : 'Launch Auction'}
             </button>
             <Link to="/dashboard" className="btn-secondary" style={{ textDecoration: 'none' }}>
               Cancel

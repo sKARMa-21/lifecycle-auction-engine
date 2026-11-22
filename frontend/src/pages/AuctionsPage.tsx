@@ -1,4 +1,4 @@
-import { apiFetch } from '../lib/api'
+import { apiData, apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -21,6 +21,8 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   const [now, setNow] = useState(Date.now())
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(null)
   const [outbidNotice, setOutbidNotice] = useState<string | null>(null)
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
+  const isSuperAdmin = user.role === 'super_admin'
 
   const activeAuctionIds = useMemo(
     () => auctions.filter((a) => isAuctionLive(a, now)).map((a) => a.id),
@@ -65,6 +67,13 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
       setLoading(false)
     }
   }, [])
+
+  const cancelAuction = async (auction: Auction) => {
+    if (!confirm(`Cancel "${auction.title}"? Bidding stops and the bicycle returns to the auction pool.`)) return
+    apiData(`/auctions/${auction.id}/cancel`, { method: 'POST' })
+      .then(() => { setMsg({ text: `Auction "${auction.title}" was cancelled.`, isError: false }); loadAuctions() })
+      .catch((err: Error) => setMsg({ text: err.message, isError: true }))
+  }
 
   useEffect(() => {
     loadAuctions()
@@ -137,7 +146,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
           <div style={{ textAlign: 'center', padding: '40px' }}>
             <p className="subtitle">There are currently no active cycle auctions.</p>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              When bicycles are marked AUCTIONABLE, you or campus admins can launch auctions directly from the Bicycle details page.
+              Approved auction requests and unclaimed impounded bicycles enter the auction pool, and hostel admins launch auctions from there.
             </p>
             <Link to="/bicycles" className="btn-submit" style={{ display: 'inline-block', width: 'auto', marginTop: '16px' }}>
               View Bicycles
@@ -192,6 +201,8 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
                         {upcoming ? 'Not started yet' : 'Bidding closed'}
                       </button>
                     )}
+                    {upcoming && isAdmin && <Link to={`/launch-auction?edit=${auction.id}`} className="btn-toggle" style={{ textDecoration: 'none' }}>Edit</Link>}
+                    {(upcoming || live) && isSuperAdmin && <button type="button" className="btn-link btn-danger" onClick={() => cancelAuction(auction)}>Cancel auction</button>}
                   </div>
                 </div>
               )
