@@ -175,6 +175,24 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
 
   const can = (action: string) => bicycle.actions.includes(action)
   const canClaim = can('claim')
+  const specifications = [
+    { label: 'Brand & model', value: [bicycle.brand, bicycle.model].filter(Boolean).join(' ') },
+    { label: 'Color', value: bicycle.color },
+    { label: 'Serial number', value: bicycle.serial_number },
+    ...(isAdmin ? [
+      { label: 'Found location', value: bicycle.found_location },
+      { label: 'Registered on', value: new Date(bicycle.created_at).toLocaleString() },
+    ] : []),
+  ].filter(({ value }) => value)
+
+  const actions = ([
+    ['tag_asset', 'btn-warning', 'Tag as Asset', () => setShowTagAssetModal(true)],
+    ['request_auction', 'btn-primary', 'Request Auction', handleRequestAuction],
+    ['reclaim', 'btn-success', 'Return to Owner', handleReclaim],
+    ['promote', 'btn-primary', 'Promote to Auctionable', handlePromoteAuctionable],
+    ['launch_auction', 'btn-accent', 'Create Auction', () => setShowAuctionModal(true)],
+    ['mark_sold', 'btn-dark', 'Mark as Sold', () => setShowSoldModal(true)],
+  ] as const).filter(([action]) => can(action))
 
   return (
     <div className="page-wide">
@@ -202,98 +220,53 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
       {isAdmin && (
       <div className="card-wide">
         <div className="detail-header-flex">
-          <div>
-            <h3>Lifecycle State Tracking</h3>
-            <p className="subtitle">
-              {bicycle.status === 'asset' && bicycle.claim_deadline
-                ? `Claim deadline: ${new Date(bicycle.claim_deadline).toLocaleString()}`
-                : 'Lifecycle tracking includes the 15-day claim period and ownership history.'}
-            </p>
-          </div>
-          <div>
-            <span className={`status-badge status-${bicycle.status}`}>
-              {bicycle.status?.toUpperCase()}
-            </span>
-          </div>
+          <h3>Lifecycle</h3>
+          <span className={`status-badge status-${bicycle.status}`}>
+            {bicycle.status?.toUpperCase()}
+          </span>
         </div>
 
         <LifecycleTimeline bicycle={bicycle} />
       </div>
       )}
 
-      <div className="detail-two-col">
+      <div className={actions.length ? 'detail-two-col' : undefined}>
         <div className="card-wide">
-          <h3>Bicycle Specifications</h3>
-          <div className="meta-list">
-            <div className="meta-row">
-              <span className="meta-label">Asset Tag:</span>
-              <span className="meta-val"><strong>{bicycle.asset_tag}</strong></span>
+          {specifications.length > 0 && <>
+            <h3>Bicycle Details</h3>
+            <div className="meta-list">
+              {specifications.map(({ label, value }) => (
+                <div className="meta-row" key={label}>
+                  <span className="meta-label">{label}</span>
+                  <span className="meta-val">{value}</span>
+                </div>
+              ))}
             </div>
-            <div className="meta-row">
-              <span className="meta-label">Brand & Model:</span>
-              <span className="meta-val">
-                {[bicycle.brand, bicycle.model].filter(Boolean).join(' ') || 'Not specified'}
-              </span>
-            </div>
-            <div className="meta-row">
-              <span className="meta-label">Color:</span>
-              <span className="meta-val">{bicycle.color || 'Not specified'}</span>
-            </div>
-            <div className="meta-row">
-              <span className="meta-label">Serial Number:</span>
-              <span className="meta-val">{bicycle.serial_number || 'None'}</span>
-            </div>
-            {isAdmin && (
-              <div className="meta-row">
-                <span className="meta-label">Found Location:</span>
-                <span className="meta-val">{bicycle.found_location || 'Not recorded'}</span>
-              </div>
-            )}
-            <div className="meta-row">
-              <span className="meta-label">Registered On:</span>
-              <span className="meta-val">{new Date(bicycle.created_at).toLocaleString()}</span>
-            </div>
-          </div>
+            <div className="divider" />
+          </>}
 
-          <div className="divider" />
-
-          <h3>Registered Ownership</h3>
+          <h3>Owner</h3>
           {owner ? (
             <div className="owner-card">
-              <div className="owner-title">{owner.full_name}</div>
-              {isOwner && <span className="tag-you">You are the registered owner</span>}
+              <div className="owner-title">{owner.full_name}{isOwner && ' (you)'}</div>
             </div>
           ) : (
-            <p className="subtitle">{ownerId ? 'Owner details are unavailable.' : 'No registered owner linked.'}</p>
+            <p className="subtitle">{ownerId ? 'Owner details unavailable.' : 'No registered owner.'}</p>
           )}
         </div>
 
-        <div className="card-wide">
-          <h3>Lifecycle Engine Actions</h3>
-          <p className="subtitle">Execute state transitions based on your role ({user.role}):</p>
-
-          <div className="actions-stack">
-            {([
-              ['tag_asset', 'Tag as Abandoned Asset (Guard/Admin)', 'Impound this cycle with photo evidence. The owner is notified and gets 15 days to claim it.', 'btn-warning', 'Tag as Asset', () => setShowTagAssetModal(true)],
-              ['request_auction', 'Request Auction', 'Ask your hostel admin to sell this bicycle through the campus auction.', 'btn-primary', 'Request Auction', handleRequestAuction],
-              ['reclaim', 'Return to Owner (Admin)', 'Close the case and give the impounded cycle back to its owner before the claim deadline.', 'btn-success', 'Return to Owner', handleReclaim],
-              ['promote', 'Promote Asset to Auctionable (Admin)', "Moves an unclaimed asset to the auction pool once the owner's claim deadline has passed.", 'btn-primary', 'Promote to Auctionable', handlePromoteAuctionable],
-              ['launch_auction', 'Launch Live Auction', 'Create a live bidding listing with anti-sniping protection.', 'btn-accent', 'Create Auction', () => setShowAuctionModal(true)],
-              ['mark_sold', 'Mark as Sold (Admin)', 'Finalize auction outcome, transition to SOLD state, and log sale metrics.', 'btn-dark', 'Mark as Sold', () => setShowSoldModal(true)],
-            ] as const).filter(([action]) => can(action)).map(([action, title, text, style, label, onClick]) => (
-              <div className="action-card" key={action}>
-                <div className="action-info"><strong>{title}</strong><p>{text}</p></div>
-                <button type="button" className={`btn-action ${style}`} onClick={onClick} disabled={actionLoading}>{label}</button>
-              </div>
-            ))}
-
-            {bicycle.actions.filter((action) => action !== 'claim' && action !== 'edit').length === 0 && (
-                <div className="empty-actions">
-                  <p>No actions are available to you for this bicycle right now.</p>
-                </div>
-              )}
+        {actions.length > 0 && (
+          <div className="card-wide">
+            <h3>Actions</h3>
+            <div className="form-inline">
+              {actions.map(([action, style, label, onClick]) => (
+                <button key={action} type="button" className={`btn-action ${style}`} onClick={onClick} disabled={actionLoading}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {bicycle.qr_token && <BicycleQrSticker assetTag={bicycle.asset_tag} token={bicycle.qr_token} />}
@@ -302,7 +275,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Tag Bicycle as Asset</h3>
-            <p className="subtitle">Location, notes, and proof photo required. Starts the owner's 15-day claim period.</p>
+            <p className="subtitle">Starts the owner's 15-day claim period.</p>
             <form onSubmit={handleTagAsAsset}>
               <div className="field">
                 <label>Location *</label>
@@ -344,7 +317,6 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Create Live Auction</h3>
-            <p className="subtitle">Configure auction parameters and anti-sniping protection.</p>
             <form onSubmit={handleCreateAuction}>
               <div className="field">
                 <label>Auction Title</label>
@@ -410,7 +382,6 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Record Sale & Finalize Lifecycle</h3>
-            <p className="subtitle">Set condition and sale numbers for historical campus records.</p>
             <form onSubmit={handleMarkSold}>
               <div className="field">
                 <label>Cycle Condition</label>

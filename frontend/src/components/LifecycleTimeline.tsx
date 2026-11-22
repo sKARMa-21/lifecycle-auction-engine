@@ -6,10 +6,10 @@ interface LifecycleTimelineProps {
 
 export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
   const steps = [
-    { key: 'active', label: '1. Active', desc: 'Registered & in-use on campus' },
-    { key: 'asset', label: '2. Tagged Asset', desc: 'Impounded with 15-day grace period' },
-    { key: 'auctionable', label: '3. Auctionable', desc: 'Ready or listed on live auction' },
-    { key: 'sold', label: '4. Sold', desc: 'Auction closed & transferred' },
+    { key: 'active', label: 'Active' },
+    { key: 'asset', label: 'Tagged Asset' },
+    { key: 'auctionable', label: 'Auctionable' },
+    { key: 'sold', label: 'Sold' },
   ]
 
   const statusOrder: Record<string, number> = {
@@ -21,15 +21,8 @@ export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
 
   const currentIdx = statusOrder[(bicycle.status || '').toLowerCase()] ?? 0
 
-  let graceRemainingDays: number | null = null
-  let graceExpired = false
   const deadline = bicycle.claim_deadline ? new Date(bicycle.claim_deadline) : null
-
-  if (bicycle.status === 'asset' && deadline) {
-    const remainingMs = deadline.getTime() - new Date().getTime()
-    graceRemainingDays = Math.max(0, Math.ceil(remainingMs / (1000 * 60 * 60 * 24)))
-    graceExpired = remainingMs <= 0
-  }
+  const graceExpired = deadline !== null && deadline.getTime() <= Date.now()
 
   return (
     <div className="lifecycle-timeline-container">
@@ -49,34 +42,17 @@ export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
               <div className="step-circle">
                 {isDone ? '✓' : idx + 1}
               </div>
-              <div className="step-content">
-                <span className="step-label">{s.label}</span>
-                <span className="step-desc">{s.desc}</span>
-              </div>
+              <span className="step-label">{s.label}</span>
               {idx < steps.length - 1 && <div className="step-connector" />}
             </div>
           )
         })}
       </div>
 
-      {bicycle.status === 'asset' && (
+      {bicycle.status === 'asset' && deadline && (
         <div className={`grace-box ${graceExpired ? 'grace-expired' : 'grace-active'}`}>
-          <div className="grace-title">
-            {graceExpired ? '15-Day Claim Period Has Ended' : '15-Day Claim Period in Progress'}
-          </div>
-          <div className="grace-text">
-            {graceExpired ? (
-              <p>
-                The claim deadline <strong>{deadline?.toLocaleString()}</strong> has passed.
-                The expiry worker moves it to the <strong>auction pool</strong> within a minute.
-              </p>
-            ) : (
-              <p>
-                Impounded on <strong>{new Date(bicycle.asset_tagged_at!).toLocaleDateString()}</strong>.{' '}
-                <strong>{graceRemainingDays} day(s)</strong> left for the owner to claim this cycle, until <strong>{deadline?.toLocaleString()}</strong>.
-              </p>
-            )}
-          </div>
+          <div className="grace-title">{graceExpired ? 'Claim deadline passed' : 'Claim deadline'}</div>
+          <p>{deadline.toLocaleString()}</p>
         </div>
       )}
 

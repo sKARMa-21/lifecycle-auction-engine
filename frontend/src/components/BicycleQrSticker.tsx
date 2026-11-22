@@ -9,7 +9,6 @@ export default function BicycleQrSticker({ assetTag, token }: { assetTag: string
   return (
     <div className="card-wide">
       <h3>QR Sticker</h3>
-      <p className="subtitle">Stick this on the bicycle. A guard scans it with a phone camera to open this bicycle.</p>
       {LOCAL_ONLY && (
         <p className="alert alert-error">
           This QR points to {PUBLIC_URL}, which a phone cannot open. Set VITE_PUBLIC_URL or open the app by its network address before printing.

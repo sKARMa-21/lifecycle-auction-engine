@@ -142,7 +142,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   ]
 
   return (
-    <div className="page-wide">
+    <div className="page-wide dashboard">
       <PageHeader title="Dashboard" subtitle={`Welcome, ${user.full_name} · ${role}${hostel && !isSuperAdmin ? ` · ${hostel}` : ''}`}
         role={user.role} onLogout={onLogout} />
 
@@ -173,14 +173,16 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
                 ? user.hostel_id ? 'No bicycles for this hostel yet.' : 'No hostel is assigned to your account.'
                 : isSuperAdmin ? 'No bicycles in the registry yet.' : 'You have no registered bicycles yet.'
             }</p> : (
-              <div className="dashboard-table">
-                <table className="simple-table">
-                  <thead><tr><th>Asset tag</th><th>Bicycle</th><th>Status</th></tr></thead>
-                  <tbody>{bicycles.map((bike) => (
-                    <tr key={bike.id}>
-                      <td><Link to={`/bicycles/${bike.id}`} className="btn-link">{bike.asset_tag}</Link></td>
-                      <td>{[bike.brand, bike.model, bike.color].filter(Boolean).join(' · ') || '—'}</td>
-                      <td>{isAdmin ? <span className={`status-badge status-${bike.status}`}>
+              <div className="dashboard-table dashboard-bicycles">
+                <table className="simple-table" role="table" aria-label="Bicycle list">
+                  <thead role="rowgroup"><tr role="row">
+                    <th role="columnheader" scope="col">Asset tag</th><th role="columnheader" scope="col">Bicycle</th><th role="columnheader" scope="col">Status</th>
+                  </tr></thead>
+                  <tbody role="rowgroup">{bicycles.map((bike) => (
+                    <tr key={bike.id} role="row">
+                      <td role="cell"><Link to={`/bicycles/${bike.id}`} className="btn-link">{bike.asset_tag}</Link></td>
+                      <td role="cell">{[bike.brand, bike.model, bike.color].filter(Boolean).join(' · ') || '—'}</td>
+                      <td role="cell">{isAdmin ? <span className={`status-badge status-${bike.status}`}>
                         {bicycleStats.find(({ status }) => status === bike.status)?.label ?? bike.status ?? '—'}
                       </span> : bike.message || 'Registered'}</td>
                     </tr>
@@ -288,13 +290,16 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         <div className="card-wide">
           <h3>Staff and users</h3>
           {directoryError && <p className="alert alert-error" role="alert">{directoryError}</p>}
-          <div style={{ overflowX: 'auto' }}>
-            <table className="simple-table">
-              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Hostel</th></tr></thead>
-              <tbody>{directory.map((account) => (
-                <tr key={account.id}>
-                  <td>{account.full_name}</td><td>{account.email}</td><td>{account.role}</td>
-                  <td>{account.role === 'admin' ? (
+          <div className="dashboard-table dashboard-directory">
+            <table className="simple-table" role="table" aria-label="Staff and users">
+              <thead role="rowgroup"><tr role="row">
+                <th role="columnheader" scope="col">Name</th><th role="columnheader" scope="col">Email</th>
+                <th role="columnheader" scope="col">Role</th><th role="columnheader" scope="col">Hostel</th>
+              </tr></thead>
+              <tbody role="rowgroup">{directory.map((account) => (
+                <tr key={account.id} role="row">
+                  <td role="cell">{account.full_name}</td><td role="cell">{account.email}</td><td role="cell">{account.role}</td>
+                  <td role="cell">{account.role === 'admin' ? (
                     <HostelSelect hostels={hostels} value={account.hostel_id ?? ''} disabled={assigning}
                       className="inline-select" aria-label={`Hostel for ${account.full_name}`}
                       onChange={(e) => { if (e.target.value) void assignHostel(account.id, e.target.value) }} />

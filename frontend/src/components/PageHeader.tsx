@@ -1,3 +1,4 @@
+import { useId, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 
 interface PageHeaderProps {
@@ -9,7 +10,11 @@ interface PageHeaderProps {
 }
 
 export default function PageHeader({ title, subtitle, role, action, onLogout }: PageHeaderProps) {
-  const { pathname, search } = useLocation()
+  const { pathname, search, key } = useLocation()
+  const navId = useId()
+  const menuButton = useRef<HTMLButtonElement>(null)
+  const [openFor, setOpenFor] = useState<string | null>(null)
+  const menuOpen = openFor === key
   const admin = role === 'admin' || role === 'super_admin'
   const groups = [
     { label: 'Bicycles', links: [
@@ -25,9 +30,19 @@ export default function PageHeader({ title, subtitle, role, action, onLogout }: 
 
   return (
     <header className="bar">
-      <div className="nav-bar">
+      <div className="nav-bar" onKeyDown={(event) => {
+        if (event.key === 'Escape' && menuOpen) {
+          setOpenFor(null)
+          menuButton.current?.focus()
+        }
+      }}>
         <span className="nav-brand">CycleEngine</span>
-        <nav className="bar-actions" aria-label="Main navigation" key={pathname + search}>
+        <button ref={menuButton} type="button" className="nav-toggle" aria-controls={navId} aria-expanded={menuOpen}
+          onClick={() => setOpenFor(menuOpen ? null : key)}>
+          Menu <span aria-hidden="true">{menuOpen ? '▴' : '▾'}</span>
+        </button>
+        <nav id={navId} className="bar-actions" aria-label="Main navigation" data-open={menuOpen} key={pathname + search}
+          onClick={(event) => { if (event.target instanceof Element && event.target.closest('a')) setOpenFor(null) }}>
           <NavLink to="/dashboard">Dashboard</NavLink>
           {role === 'guard' ? <NavLink to="/bicycles">Scan bicycle</NavLink> : groups.map(({ label, links }) => (
             <details key={label} name="main-menu" onBlur={(event) => {
@@ -41,8 +56,8 @@ export default function PageHeader({ title, subtitle, role, action, onLogout }: 
             </details>
           ))}
           <NavLink to="/notifications">Notifications</NavLink>
+          <button type="button" className="nav-signout" onClick={onLogout}>Sign out</button>
         </nav>
-        <button type="button" className="nav-signout" onClick={onLogout}>Sign out</button>
       </div>
       <div className="bar-title">
         <div>
