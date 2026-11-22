@@ -52,9 +52,9 @@ const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
     title: 'Dashboard',
     canLaunchAuction: false,
     canManageStaff: false,
-    bicyclesNavLabel: 'Inspect Bicycles',
+    bicyclesNavLabel: 'Bicycle Lookup',
     showAuctionsNav: false,
-    primaryAction: { label: 'Inspect Bicycles →', to: '/bicycles' },
+    primaryAction: { label: 'Bicycle Lookup →', to: '/bicycles' },
   },
   student: {
     badge: 'Student',
@@ -74,7 +74,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
-  // Super Admin Staff Provisioning state
   const [showStaffForm, setShowStaffForm] = useState(false)
   const [staffName, setStaffName] = useState('')
   const [staffEmail, setStaffEmail] = useState('')
@@ -94,6 +93,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
 
   useEffect(() => {
     let cancelled = false
+    if (!config.canLaunchAuction) return
     Promise.all([
       apiFetch(`${API}/bicycles/`).then((r) => {
         if (!r.ok) throw new Error('Could not load dashboard data.')
@@ -113,7 +113,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       .catch(() => { if (!cancelled) setLoadError('Could not load dashboard data.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [user.id])
+  }, [user.id, config.canLaunchAuction])
 
   useEffect(() => {
     if (!config.canManageStaff) return
@@ -172,7 +172,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
 
   return (
     <div className="page-wide">
-      {/* Top Navbar */}
       <PageHeader
         badge={config.badge}
         title={config.title}
@@ -185,7 +184,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         ]}
       />
 
-      {/* Welcome Card */}
       <div className="card-wide dashboard-welcome-card">
         <div className="welcome-flex">
           <div>
@@ -219,7 +217,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         </div>
       </div>
 
-      {/* Super Admin Staff Provisioning Section (Minimal & Collapsible) */}
       {config.canManageStaff && showStaffForm && (
         <div className="card-wide" style={{ marginTop: '16px' }}>
           <h3>Add Staff</h3>
@@ -304,8 +301,8 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         </div>
       )}
 
-      {/* KPI Stats Grid */}
       {loadError && <div className="alert alert-error" role="alert">{loadError}</div>}
+      {config.canLaunchAuction && (
       <div className="kpi-grid">
         <Link to="/bicycles" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
           <span className="kpi-label">Active Bicycles</span>
@@ -334,6 +331,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
           <span className="kpi-num status-text-sold">{loading ? '...' : loadError ? '—' : soldCount}</span>
         </Link>
       </div>
+      )}
     </div>
   )
 }

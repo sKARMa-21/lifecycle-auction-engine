@@ -1,7 +1,7 @@
-import { apiFetch } from '../lib/api'
+import { apiData, apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { StudentSummary, User } from '../types/user'
 import type { Bicycle } from '../types/bicycle'
 
@@ -27,11 +27,18 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const navigate = useNavigate()
+  const [lookupToken, setLookupToken] = useState('')
   const isStudent = user.role === 'student'
+  const isGuard = user.role === 'guard'
   const isAuthority = user.role === 'admin' || user.role === 'super_admin'
   const studentUsers = users
 
   const load = useCallback(async () => {
+    if (isGuard) {
+      setLoading(false)
+      return
+    }
     try {
       setLoading(true)
       const [bRes, uRes] = await Promise.all([
@@ -43,7 +50,6 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
       const u = uRes ? await uRes.json() : []
       
       const loadedBikes: Bicycle[] = Array.isArray(b) ? b : []
-      // If student, strictly guarantee only own bicycles are displayed
       const filteredBikes = isStudent
         ? loadedBikes.filter((bike) => (bike.current_owner_id ?? bike.owner_id) === user.id)
         : loadedBikes
@@ -55,7 +61,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     } finally {
       setLoading(false)
     }
-  }, [user.id, isStudent])
+  }, [user.id, isStudent, isGuard])
 
   useEffect(() => {
     load()
@@ -141,6 +147,32 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     }
   }
 
+  const lookup = (e: FormEvent) => {
+    e.preventDefault()
+    setMsg(null)
+    apiData<Bicycle>(`/bicycles/scan/lookup?token=${encodeURIComponent(lookupToken.trim())}`)
+      .then((bike) => navigate(`/bicycles/${bike.id}`)).catch((err: Error) => setMsg({ text: err.message, isError: true }))
+  }
+
+  const lookupCard = (
+    <div className="card-wide">
+      <h3>Find a Bicycle</h3>
+      <p className="subtitle">Scan or type a QR token, asset tag, or chassis / serial number. Looking up a bicycle never changes it.</p>
+      <form onSubmit={lookup} className="form-inline">
+        <input placeholder="QR token / asset tag / serial number *" value={lookupToken} onChange={(e) => setLookupToken(e.target.value)} required />
+        <button type="submit" className="btn-submit btn-sm">Find Bicycle</button>
+      </form>
+    </div>
+  )
+
+  if (isGuard) return (
+    <div className="page-wide">
+      <PageHeader badge="Guard" title="Bicycle Lookup" role={user.role} onLogout={onLogout} links={[{ to: '/dashboard', label: 'Dashboard' }]} />
+      {msg && <div className="alert alert-error">{msg.text}</div>}
+      {lookupCard}
+    </div>
+  )
+
   return (
     <div className="page-wide">
       <PageHeader
@@ -161,7 +193,8 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
         </div>
       )}
 
-      {/* Add / Edit Bicycle Form */}
+      {isAuthority && lookupCard}
+
       {!isStudent && <div className="card-wide">
         <h3>{editingId ? `Edit Bicycle #${editingId}` : 'Register New Campus Bicycle'}</h3>
         <p className="subtitle">
@@ -218,7 +251,6 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
         </form>
       </div>}
 
-      {/* Inventory & Lifecycle Table */}
       <div className="card-wide">
         <div className="detail-header-flex">
           <div>
@@ -246,16 +278,16 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
                   <th>Tag / ID</th>
                   <th>Make & Model</th>
                   <th>Color</th>
-                  <th>Lifecycle Status</th>
-                  <th>Owner (Transfer)</th>
+                  <th>{isAuthority ? 'Lifecycle Status' : 'Status'}</th>
+                  {isAuthority && <th>Owner (Transfer)</th>}
                   <th>Lifecycle Engine</th>
-                  <th>Actions</th>
+                  {isAuthority && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {bicycles.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '32px' }}>
+                    <td colSpan={isAuthority ? 7 : 5} style={{ textAlign: 'center', padding: '32px' }}>
                       {isStudent
                         ? 'You have not registered any bicycles yet. Use Register New Cycle to submit a request.'
                         : 'No bicycles registered yet.'}
@@ -263,9 +295,6 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
                   </tr>
                 ) : (
                   bicycles.map((b) => {
-                    const isOwner = b.owner_id === user.id
-                    const canTransfer = isAuthority
-                    const ownerUser = isOwner ? user : users.find((u) => u.id === b.owner_id)
 
                     return (
                       <tr key={b.id}>
@@ -276,67 +305,37 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
                         <td>{[b.brand, b.model].filter(Boolean).join(' ') || '—'}</td>
                         <td>{b.color || '—'}</td>
                         <td>
-                          <span className={`status-badge status-${b.status.toLowerCase()}`}>
-                            {b.status.toUpperCase()}
-                          </span>
-                        </td>
-                        <td>
-                          {canTransfer ? (
-                            <select
-                              className="inline-select"
-                              value={b.owner_id ? String(b.owner_id) : ''}
-                              onChange={(e) => transfer(b.id, e.target.value)}
-                            >
-                              <option value="">No Owner (Unclaimed)</option>
-                              {studentUsers.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                  {u.full_name} {u.id === user.id ? '(You)' : ''}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                              {ownerUser ? ownerUser.full_name : 'No Owner'} (Locked)
+                          {isAuthority ? (
+                            <span className={`status-badge status-${b.status}`}>
+                              {b.status?.toUpperCase()}
                             </span>
+                          ) : (
+                            <span style={{ fontSize: '0.85rem' }}>{b.message || 'Registered'}</span>
                           )}
                         </td>
+                        {isAuthority && (
+                        <td>
+                          <select className="inline-select" value={b.owner_id ? String(b.owner_id) : ''} onChange={(e) => transfer(b.id, e.target.value)}>
+                            <option value="">No Owner</option>
+                            {studentUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                          </select>
+                        </td>
+                        )}
                         <td>
                           <Link to={`/bicycles/${b.id}`} className="btn-lifecycle-link">
-                            Manage State →
+                            {isAuthority ? 'Manage State →' : 'View Details →'}
                           </Link>
                         </td>
+                        {isAuthority && (
                         <td>
-                          {isAuthority ? (
-                            <>
-                              <button
-                                type="button"
-                                className="btn-link"
-                                onClick={() => {
-                                  setEditingId(b.id)
-                                  setForm({
-                                    asset_tag: b.asset_tag || '',
-                                    brand: b.brand || '',
-                                    model: b.model || '',
-                                    color: b.color || '',
-                                    owner_id: b.owner_id ? String(b.owner_id) : '',
-                                    found_location: b.found_location || '',
-                                  })
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-link btn-danger"
-                                onClick={() => remove(b.id)}
-                              >
-                                Delete
-                              </button>
-                            </>
-                          ) : (
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>—</span>
-                          )}
+                          <button type="button" className="btn-link" onClick={() => {
+                            setEditingId(b.id)
+                            setForm({ asset_tag: b.asset_tag || '', brand: b.brand || '', model: b.model || '', color: b.color || '',
+                              owner_id: b.owner_id ? String(b.owner_id) : '', found_location: b.found_location || '' })
+                          }}>Edit</button>
+                          <button type="button" className="btn-link btn-danger" onClick={() => remove(b.id)}>Delete</button>
                         </td>
+                        )}
                       </tr>
                     )
                   })

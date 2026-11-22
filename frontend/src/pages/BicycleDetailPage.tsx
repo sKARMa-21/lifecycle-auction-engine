@@ -1,12 +1,10 @@
-import { apiFetch } from '../lib/api'
+import { apiData, jsonRequest } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import type { Bicycle } from '../types/bicycle'
 import type { StudentSummary, User } from '../types/user'
 import LifecycleTimeline from '../components/LifecycleTimeline'
-
-const API = 'http://127.0.0.1:8000/api/v1'
 
 interface BicycleDetailPageProps {
   user: User
@@ -24,7 +22,6 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
-  // Modals / forms state
   const [showAuctionModal, setShowAuctionModal] = useState(false)
   const [auctionForm, setAuctionForm] = useState({
     title: '',
@@ -50,46 +47,21 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     proof_image_url: '',
   })
 
-  /** Parse FastAPI error detail — may be a string or a validation error array. */
-  const parseApiError = (detail: unknown): string => {
-    if (!detail) return 'Unknown error'
-    if (typeof detail === 'string') return detail
-    if (Array.isArray(detail))
-      return detail.map((e: { msg?: string; loc?: string[] }) => e.msg || '').filter(Boolean).join(', ')
-    return JSON.stringify(detail)
-  }
-
   const fetchBicycle = useCallback(async () => {
     if (!id) return
     try {
       setLoading(true)
-      const [resB, resU] = await Promise.all([
-        apiFetch(`${API}/bicycles/${id}`),
-        user.role === 'student' ? Promise.resolve(null) : apiFetch(`${API}/auth/students`),
-      ])
-
-      if (!resB.ok) {
-        throw new Error(`Bicycle with ID #${id} not found.`)
-      }
-
-      const bData = await resB.json()
-      const uData = resU ? await resU.json() : []
-
+      const [bData, uData] = await Promise.all([apiData<Bicycle>(`/bicycles/${id}`),
+        user.role === 'student' ? [] : apiData<StudentSummary[]>('/auth/students')])
       setBicycle(bData)
-      setUsers(Array.isArray(uData) ? uData : [])
-
-      // Set default auction title
+      setUsers(uData)
       setAuctionForm((prev) => ({
         ...prev,
         title: `${bData.brand || ''} ${bData.model || 'Bicycle'} [Tag #${bData.asset_tag}]`.trim(),
         ends_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString().slice(0, 16),
       }))
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setErrorMsg(err.message)
-      } else {
-        setErrorMsg('Failed to load bicycle details')
-      }
+    } catch (err) {
+      setErrorMsg((err as Error).message || 'Failed to load bicycle details')
     } finally {
       setLoading(false)
     }
@@ -99,206 +71,58 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     fetchBicycle()
   }, [fetchBicycle])
 
-  // Lifecycle Action Handlers
-  const handleTagAsAsset = async (e: FormEvent) => {
-    e.preventDefault()
+  const act = async (path: string, body: unknown, success: string | ((data: Bicycle) => string), after: () => unknown = fetchBicycle) => {
     setActionLoading(true)
     setErrorMsg('')
     setSuccessMsg('')
-
     try {
-      const res = await apiFetch(`${API}/bicycles/${id}/tag-asset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_id: user.id, ...tagAssetForm }),
-      })
-      const data = await res.json()
-      if (res.ok) {
+      const data = await apiData<Bicycle>(path, body === undefined ? { method: 'POST' } : jsonRequest('POST', body))
+      setSuccessMsg(typeof success === 'string' ? success : success(data))
+      after()
+    } catch (err) {
+      setErrorMsg((err as Error).message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
+  const handleTagAsAsset = (e: FormEvent) => {
+    e.preventDefault()
+    act(`/bicycles/${id}/tag-asset`, { actor_id: user.id, ...tagAssetForm },
+      (data) => data.message || 'Bicycle impounded. The owner has been notified and has 15 days to claim it.', () => {
         setShowTagAssetModal(false)
         setTagAssetForm({ location: '', notes: '', proof_image_url: '' })
-        setSuccessMsg('Successfully tagged as ASSET. The 15-day grace period has begun.')
         fetchBicycle()
-      } else {
-        setErrorMsg(parseApiError(data.detail) || 'Failed to tag as asset.')
-      }
-    } catch {
-      setErrorMsg('Failed to communicate with server.')
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
-  const handleReclaim = async () => {
-    if (!confirm('Reclaim this bicycle back to ACTIVE status?')) return
-    setActionLoading(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const res = await apiFetch(`${API}/bicycles/${id}/reclaim`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_id: user.id }),
       })
-      const data = await res.json()
-      if (res.ok) {
-        setSuccessMsg('Bicycle successfully reclaimed to ACTIVE status!')
-        fetchBicycle()
-      } else {
-        setErrorMsg(parseApiError(data.detail) || 'Failed to reclaim bicycle.')
-      }
-    } catch {
-      setErrorMsg('Failed to communicate with server.')
-    } finally {
-      setActionLoading(false)
-    }
   }
-
-  const handleSetAuctionable = async () => {
-    if (!confirm('Voluntarily surrender or mark this bicycle as AUCTIONABLE for campus bidding?')) return
-    setActionLoading(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const res = await apiFetch(`${API}/bicycles/${id}/set-auctionable`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_id: user.id }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setSuccessMsg('Bicycle transitioned directly to AUCTIONABLE.')
-        fetchBicycle()
-      } else {
-        setErrorMsg(parseApiError(data.detail) || 'Failed to transition to auctionable.')
-      }
-    } catch {
-      setErrorMsg('Failed to communicate with server.')
-    } finally {
-      setActionLoading(false)
-    }
+  const handleReclaim = () => {
+    if (confirm(isAdmin ? 'Return this bicycle to its owner?' : 'Claim your bicycle back?'))
+      act(`/bicycles/${id}/reclaim`, { actor_id: user.id }, isAdmin ? 'The bicycle is back with its owner.' : 'Your bicycle is back with you.')
   }
-
-  const handleStudentSurrender = async () => {
-    if (!confirm('Surrender your bicycle for auction? You will receive a portion of the proceeds when it is sold.')) return
-    setActionLoading(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const res = await apiFetch(`${API}/bicycles/${id}/surrender`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actor_id: user.id }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setSuccessMsg('Your bicycle has been surrendered for auction. You will get value when it is sold.')
-        fetchBicycle()
-      } else {
-        setErrorMsg(parseApiError(data.detail) || 'Failed to surrender bicycle.')
-      }
-    } catch {
-      setErrorMsg('Failed to communicate with server.')
-    } finally {
-      setActionLoading(false)
-    }
+  const handleRequestAuction = () => {
+    if (confirm('Ask your hostel admin to put this bicycle up for auction?'))
+      act('/auction-requests', { bicycle_id: Number(id) }, 'Request sent. Track it under My Auctions.')
   }
-
-  const handlePromoteAuctionable = async () => {
-    if (!confirm('Promote this asset to AUCTIONABLE? (Requires 30 days to have elapsed).')) return
-    setActionLoading(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const res = await apiFetch(`${API}/bicycles/${id}/promote-auctionable`, {
-        method: 'POST',
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setSuccessMsg('Asset promoted to AUCTIONABLE successfully!')
-        fetchBicycle()
-      } else {
-        setErrorMsg(parseApiError(data.detail) || 'Failed to promote asset to auctionable.')
-      }
-    } catch {
-      setErrorMsg('Failed to communicate with server.')
-    } finally {
-      setActionLoading(false)
-    }
+  const handlePromoteAuctionable = () => {
+    if (confirm('Move this asset to the auction pool? (Allowed once the owner\'s claim deadline has passed.)'))
+      act(`/bicycles/${id}/promote-auctionable`, undefined, 'Asset promoted to AUCTIONABLE successfully!')
   }
-
-  const handleCreateAuction = async (e: FormEvent) => {
+  const handleCreateAuction = (e: FormEvent) => {
     e.preventDefault()
-    setActionLoading(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const res = await apiFetch(`${API}/auctions/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          bicycle_id: Number(id),
-          created_by_id: user.id,
-          title: auctionForm.title,
-          starting_price: Number(auctionForm.starting_price),
-          min_bid_increment: Number(auctionForm.min_bid_increment),
-          starts_at: new Date(auctionForm.starts_at).toISOString(),
-          ends_at: new Date(auctionForm.ends_at).toISOString(),
-          anti_snipe_trigger_window: 5,
-          anti_snipe_extension_minutes: 5,
-        }),
-      })
-
-      const data = await res.json()
-      if (res.ok) {
-        setShowAuctionModal(false)
-        setSuccessMsg('Auction created successfully!')
-        navigate('/auctions')
-      } else {
-        setErrorMsg(parseApiError(data.detail) || 'Failed to create auction.')
-      }
-    } catch {
-      setErrorMsg('Failed to communicate with server.')
-    } finally {
-      setActionLoading(false)
-    }
+    act('/auctions/', {
+      bicycle_id: Number(id), created_by_id: user.id, title: auctionForm.title,
+      starting_price: Number(auctionForm.starting_price), min_bid_increment: Number(auctionForm.min_bid_increment),
+      starts_at: new Date(auctionForm.starts_at).toISOString(), ends_at: new Date(auctionForm.ends_at).toISOString(),
+      anti_snipe_trigger_window: 5, anti_snipe_extension_minutes: 5,
+    }, 'Auction created successfully!', () => { setShowAuctionModal(false); navigate('/auctions') })
   }
-
-  const handleMarkSold = async (e: FormEvent) => {
+  const handleMarkSold = (e: FormEvent) => {
     e.preventDefault()
-    setActionLoading(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const res = await apiFetch(`${API}/bicycles/${id}/mark-sold`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cycle_condition: soldForm.cycle_condition,
-          market_value: Number(soldForm.market_value),
-          years_used: Number(soldForm.years_used),
-          base_price_set: Number(soldForm.base_price_set),
-          sold_price: Number(soldForm.sold_price),
-        }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setShowSoldModal(false)
-        setSuccessMsg('Bicycle marked as SOLD and recorded in analytics.')
-        fetchBicycle()
-      } else {
-        setErrorMsg(parseApiError(data.detail) || 'Failed to mark as sold.')
-      }
-    } catch {
-      setErrorMsg('Failed to communicate with server.')
-    } finally {
-      setActionLoading(false)
-    }
+    act(`/bicycles/${id}/mark-sold`, {
+      cycle_condition: soldForm.cycle_condition, market_value: Number(soldForm.market_value), years_used: Number(soldForm.years_used),
+      base_price_set: Number(soldForm.base_price_set), sold_price: Number(soldForm.sold_price),
+    }, 'Bicycle marked as SOLD and recorded in analytics.', () => { setShowSoldModal(false); fetchBicycle() })
   }
 
   if (loading) {
@@ -328,24 +152,12 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
   const ownerId = bicycle.current_owner_id ?? bicycle.owner_id
   const isOwner = user.id === ownerId
   const owner = isOwner ? user : users.find((u) => u.id === ownerId)
-  const isAdmin = user.role === 'admin' || user.role === 'super_admin'
-  const isGuard = user.role === 'guard'
-  const isStudent = user.role === 'student'
 
-  // Admin / guard-only lifecycle actions
-  const canTagAsAsset = (isAdmin || isGuard) && bicycle.status === 'active'
-  const canReclaim = isAdmin && bicycle.status === 'asset'
-  const canSetAuctionable = isAdmin && bicycle.status === 'active'
-  const canPromoteAuctionable = isAdmin && bicycle.status === 'asset'
-  const canMarkSold = isAdmin && bicycle.status === 'auctionable'
-  const canCreateAuction = isAdmin && bicycle.status === 'auctionable'
-
-  // Student-only: show notice when their bike has been tagged as an asset
-  const showStudentAssetNotice = isOwner && isStudent && bicycle.status === 'asset'
+  const can = (action: string) => bicycle.actions.includes(action)
+  const canClaim = can('claim')
 
   return (
     <div className="page-wide">
-      {/* Top Navbar */}
       <PageHeader
         badge="Lifecycle Engine"
         title={`Bicycle #${bicycle.id}: ${bicycle.asset_tag}`}
@@ -358,43 +170,43 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         ]}
       />
 
-      {/* Notifications */}
       {errorMsg && <div className="alert alert-error">{errorMsg}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
 
-      {/* Student Asset Notice */}
-      {showStudentAssetNotice && (
+      {bicycle.message && (
         <div className="card-wide" style={{ borderLeft: '4px solid #d97706' }}>
-          <h3 style={{ marginBottom: '8px' }}>Your bicycle has been tagged as a campus asset</h3>
-          <p className="subtitle" style={{ marginBottom: '12px' }}>A guard has flagged it. You have <strong>15 days</strong> to respond.</p>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button type="button" className="btn-submit" style={{ width: 'auto' }} onClick={handleReclaim} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Reclaim my bicycle'}</button>
-            <button type="button" className="btn-secondary" style={{ width: 'auto' }} onClick={handleStudentSurrender} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Surrender for auction (get value when sold)'}</button>
-          </div>
+          <h3 style={{ marginBottom: canClaim ? '12px' : 0 }}>{bicycle.message}</h3>
+          {canClaim && (
+            <button type="button" className="btn-submit" style={{ width: 'auto' }} onClick={handleReclaim} disabled={actionLoading}>
+              {actionLoading ? 'Processing...' : 'Claim Cycle'}
+            </button>
+          )}
         </div>
       )}
 
-      {/* Lifecycle Progress Flow */}
+      {isAdmin && (
       <div className="card-wide">
         <div className="detail-header-flex">
           <div>
             <h3>Lifecycle State Tracking</h3>
             <p className="subtitle">
-              Lifecycle tracking includes the 15-day claim period and ownership history.
+              {bicycle.status === 'asset' && bicycle.claim_deadline
+                ? `Claim deadline: ${new Date(bicycle.claim_deadline).toLocaleString()}`
+                : 'Lifecycle tracking includes the 15-day claim period and ownership history.'}
             </p>
           </div>
           <div>
-            <span className={`status-badge status-${bicycle.status.toLowerCase()}`}>
-              {bicycle.status.toUpperCase()}
+            <span className={`status-badge status-${bicycle.status}`}>
+              {bicycle.status?.toUpperCase()}
             </span>
           </div>
         </div>
 
         <LifecycleTimeline bicycle={bicycle} />
       </div>
+      )}
 
       <div className="detail-two-col">
-        {/* Left Column: Bicycle Metadata */}
         <div className="card-wide">
           <h3>Bicycle Specifications</h3>
           <div className="meta-list">
@@ -416,10 +228,12 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
               <span className="meta-label">Serial Number:</span>
               <span className="meta-val">{bicycle.serial_number || 'None'}</span>
             </div>
-            <div className="meta-row">
-              <span className="meta-label">Found Location:</span>
-              <span className="meta-val">{bicycle.found_location || 'Not recorded'}</span>
-            </div>
+            {isAdmin && (
+              <div className="meta-row">
+                <span className="meta-label">Found Location:</span>
+                <span className="meta-val">{bicycle.found_location || 'Not recorded'}</span>
+              </div>
+            )}
             <div className="meta-row">
               <span className="meta-label">Registered On:</span>
               <span className="meta-val">{new Date(bicycle.created_at).toLocaleString()}</span>
@@ -439,137 +253,39 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
           )}
         </div>
 
-        {/* Right Column: Engine Actions */}
         <div className="card-wide">
           <h3>Lifecycle Engine Actions</h3>
           <p className="subtitle">Execute state transitions based on your role ({user.role}):</p>
 
           <div className="actions-stack">
-            {/* Active State Actions */}
-            {canTagAsAsset && (
-              <div className="action-card">
-                <div className="action-info">
-                  <strong>Tag as Abandoned Asset (Guard/Admin)</strong>
-                  <p>Move cycle to ASSET state. Validates degree duration and initiates 15-day grace period.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-action btn-warning"
-                  onClick={() => setShowTagAssetModal(true)}
-                  disabled={actionLoading}
-                >
-                  Tag as Asset
-                </button>
+            {([
+              ['tag_asset', 'Tag as Abandoned Asset (Guard/Admin)', 'Impound this cycle with photo evidence. The owner is notified and gets 15 days to claim it.', 'btn-warning', 'Tag as Asset', () => setShowTagAssetModal(true)],
+              ['request_auction', 'Request Auction', 'Ask your hostel admin to sell this bicycle through the campus auction.', 'btn-primary', 'Request Auction', handleRequestAuction],
+              ['reclaim', 'Return to Owner (Admin)', 'Close the case and give the impounded cycle back to its owner before the claim deadline.', 'btn-success', 'Return to Owner', handleReclaim],
+              ['promote', 'Promote Asset to Auctionable (Admin)', "Moves an unclaimed asset to the auction pool once the owner's claim deadline has passed.", 'btn-primary', 'Promote to Auctionable', handlePromoteAuctionable],
+              ['launch_auction', 'Launch Live Auction', 'Create a live bidding listing with anti-sniping protection.', 'btn-accent', 'Create Auction', () => setShowAuctionModal(true)],
+              ['mark_sold', 'Mark as Sold (Admin)', 'Finalize auction outcome, transition to SOLD state, and log sale metrics.', 'btn-dark', 'Mark as Sold', () => setShowSoldModal(true)],
+            ] as const).filter(([action]) => can(action)).map(([action, title, text, style, label, onClick]) => (
+              <div className="action-card" key={action}>
+                <div className="action-info"><strong>{title}</strong><p>{text}</p></div>
+                <button type="button" className={`btn-action ${style}`} onClick={onClick} disabled={actionLoading}>{label}</button>
               </div>
-            )}
+            ))}
 
-            {canSetAuctionable && (
-              <div className="action-card">
-                <div className="action-info">
-                  <strong>Directly Mark Auctionable (Owner)</strong>
-                  <p>Voluntarily submit your bicycle to the campus auction pool.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-action btn-primary"
-                  onClick={handleSetAuctionable}
-                  disabled={actionLoading}
-                >
-                  Mark Auctionable
-                </button>
-              </div>
-            )}
-
-            {/* Asset State Actions */}
-            {canReclaim && (
-              <div className="action-card">
-                <div className="action-info">
-                  <strong>Reclaim Bicycle (Owner)</strong>
-                  <p>Claim back impounded cycle during the active grace period and restore to ACTIVE.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-action btn-success"
-                  onClick={handleReclaim}
-                  disabled={actionLoading}
-                >
-                  Reclaim Cycle
-                </button>
-              </div>
-            )}
-
-            {canPromoteAuctionable && (
-              <div className="action-card">
-                <div className="action-info">
-                  <strong>Promote Asset to Auctionable (Admin)</strong>
-                  <p>Transitions unclaimed asset to AUCTIONABLE once the 30-day grace period has passed.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-action btn-primary"
-                  onClick={handlePromoteAuctionable}
-                  disabled={actionLoading}
-                >
-                  Promote to Auctionable
-                </button>
-              </div>
-            )}
-
-            {/* Auctionable State Actions */}
-            {canCreateAuction && (
-              <div className="action-card">
-                <div className="action-info">
-                  <strong>Launch Live Auction</strong>
-                  <p>Create a live bidding listing with anti-sniping protection.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-action btn-accent"
-                  onClick={() => setShowAuctionModal(true)}
-                  disabled={actionLoading}
-                >
-                  Create Auction
-                </button>
-              </div>
-            )}
-
-            {canMarkSold && (
-              <div className="action-card">
-                <div className="action-info">
-                  <strong>Mark as Sold (Admin)</strong>
-                  <p>Finalize auction outcome, transition to SOLD state, and log sale metrics.</p>
-                </div>
-                <button
-                  type="button"
-                  className="btn-action btn-dark"
-                  onClick={() => setShowSoldModal(true)}
-                  disabled={actionLoading}
-                >
-                  Mark as Sold
-                </button>
-              </div>
-            )}
-
-            {!canTagAsAsset &&
-              !canReclaim &&
-              !canSetAuctionable &&
-              !canPromoteAuctionable &&
-              !canCreateAuction &&
-              !canMarkSold && (
+            {bicycle.actions.filter((action) => action !== 'claim' && action !== 'edit').length === 0 && (
                 <div className="empty-actions">
-                  <p>No actionable lifecycle transitions available for your role ({user.role}) in this bicycle's current state ({bicycle.status}).</p>
+                  <p>No actions are available to you for this bicycle right now.</p>
                 </div>
               )}
           </div>
         </div>
       </div>
 
-      {/* Modal: Tag as Asset */}
       {showTagAssetModal && (
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Tag Bicycle as Asset</h3>
-            <p className="subtitle">Location, notes, and proof photo required. Starts the 15-day grace period.</p>
+            <p className="subtitle">Location, notes, and proof photo required. Starts the owner's 15-day claim period.</p>
             <form onSubmit={handleTagAsAsset}>
               <div className="field">
                 <label>Location *</label>
@@ -592,7 +308,6 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         </div>
       )}
 
-      {/* Modal: Create Auction */}
       {showAuctionModal && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -659,7 +374,6 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         </div>
       )}
 
-      {/* Modal: Mark as Sold */}
       {showSoldModal && (
         <div className="modal-overlay">
           <div className="modal-content">

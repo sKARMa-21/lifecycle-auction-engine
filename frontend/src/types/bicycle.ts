@@ -9,7 +9,11 @@ export interface Bicycle {
   color?: string | null
   description?: string | null
   found_location?: string | null
-  status: CycleState | string
+  status?: CycleState | string
+  claim_deadline?: string | null
+  case_hostel_id?: number | null
+  actions: string[]
+  message?: string | null
   owner_id?: number | null
   current_owner_id?: number | null
   reported_by_id?: number | null

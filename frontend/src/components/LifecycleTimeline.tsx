@@ -7,7 +7,7 @@ interface LifecycleTimelineProps {
 export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
   const steps = [
     { key: 'active', label: '1. Active', desc: 'Registered & in-use on campus' },
-    { key: 'asset', label: '2. Tagged Asset', desc: 'Impounded with 30-day grace period' },
+    { key: 'asset', label: '2. Tagged Asset', desc: 'Impounded with 15-day grace period' },
     { key: 'auctionable', label: '3. Auctionable', desc: 'Ready or listed on live auction' },
     { key: 'sold', label: '4. Sold', desc: 'Auction closed & transferred' },
   ]
@@ -19,20 +19,16 @@ export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
     sold: 3,
   }
 
-  const currentIdx = statusOrder[bicycle.status.toLowerCase()] ?? 0
+  const currentIdx = statusOrder[(bicycle.status || '').toLowerCase()] ?? 0
 
-  // Calculate Grace Period
   let graceRemainingDays: number | null = null
   let graceExpired = false
+  const deadline = bicycle.claim_deadline ? new Date(bicycle.claim_deadline) : null
 
-  if (bicycle.status === 'asset' && bicycle.asset_tagged_at) {
-    const taggedDate = new Date(bicycle.asset_tagged_at)
-    const now = new Date()
-    const diffMs = now.getTime() - taggedDate.getTime()
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-    const totalGraceDays = 30
-    graceRemainingDays = Math.max(0, totalGraceDays - diffDays)
-    graceExpired = diffDays >= totalGraceDays
+  if (bicycle.status === 'asset' && deadline) {
+    const remainingMs = deadline.getTime() - new Date().getTime()
+    graceRemainingDays = Math.max(0, Math.ceil(remainingMs / (1000 * 60 * 60 * 24)))
+    graceExpired = remainingMs <= 0
   }
 
   return (
@@ -66,19 +62,18 @@ export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
       {bicycle.status === 'asset' && (
         <div className={`grace-box ${graceExpired ? 'grace-expired' : 'grace-active'}`}>
           <div className="grace-title">
-            {graceExpired ? '30-Day Grace Period Has Expired' : '30-Day Grace Period in Progress'}
+            {graceExpired ? '15-Day Claim Period Has Ended' : '15-Day Claim Period in Progress'}
           </div>
           <div className="grace-text">
             {graceExpired ? (
               <p>
-                The cycle has completed the statutory 30-day grace period since being impounded on{' '}
-                <strong>{new Date(bicycle.asset_tagged_at!).toLocaleDateString()}</strong>.
-                It can now be promoted to <strong>Auctionable</strong>.
+                The claim deadline <strong>{deadline?.toLocaleString()}</strong> has passed.
+                The expiry worker moves it to the <strong>auction pool</strong> within a minute.
               </p>
             ) : (
               <p>
                 Impounded on <strong>{new Date(bicycle.asset_tagged_at!).toLocaleDateString()}</strong>.{' '}
-                <strong>{graceRemainingDays} day(s)</strong> remaining for the registered student owner to reclaim this cycle before it becomes auctionable.
+                <strong>{graceRemainingDays} day(s)</strong> left for the owner to claim this cycle, until <strong>{deadline?.toLocaleString()}</strong>.
               </p>
             )}
           </div>
