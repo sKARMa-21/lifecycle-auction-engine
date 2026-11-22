@@ -1,8 +1,8 @@
-from datetime import date, datetime, timezone
+from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
 from enum import Enum
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, Enum as SQLEnum, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Enum as SQLEnum, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -17,6 +17,14 @@ class UserRole(str, Enum):
     ADMIN = "admin"
     GUARD = "guard"
     STUDENT = "student"
+
+
+class Hostel(Base):
+    __tablename__ = "hostels"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(5), unique=True)
+    name: Mapped[str] = mapped_column(String(50))
 
 
 class User(Base):
@@ -36,22 +44,10 @@ class User(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # Contact
-    phone_number: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
-
-    # Student degree details (jayesh's lifecycle-aware fields)
-    degree_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)   # BTech, MTech, PhD
-    degree_duration_years: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    enrollment_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-
-    # Student degree details (skarma-dev's DB design fields — kept for migration compat)
-    joining_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    course_duration_years: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    degree_end_date: Mapped[Optional[date]] = mapped_column(Date, index=True, nullable=True)
-
-    # Hostel info
-    hostel_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    room_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(30))
+    roll_number: Mapped[Optional[str]] = mapped_column(String(30), unique=True)
+    degree_course: Mapped[Optional[str]] = mapped_column(String(100))
+    hostel_id: Mapped[Optional[int]] = mapped_column(ForeignKey("hostels.id"), index=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -68,18 +64,8 @@ class User(Base):
     )
     stickers: Mapped[List["QRSticker"]] = relationship("QRSticker", back_populates="issued_to")
 
-    # Computed helpers
     @property
-    def graduation_year(self) -> Optional[int]:
-        if self.enrollment_year and self.degree_duration_years:
-            return self.enrollment_year + self.degree_duration_years
-        return None
-
-    def is_degree_active(self, current_year: int) -> bool:
-        """Returns True if the student is currently enrolled within degree duration."""
-        if self.role != UserRole.STUDENT:
-            return False
-        grad_year = self.graduation_year
-        if grad_year is None:
-            return True
-        return current_year < grad_year
+    def profile_complete(self) -> bool:
+        return self.role != UserRole.STUDENT or bool(
+            self.roll_number and self.degree_course and self.hostel_id and self.phone_number
+        )

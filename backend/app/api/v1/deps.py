@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -49,3 +49,16 @@ def require_roles(*allowed_roles: UserRole) -> Callable[[User], User]:
         return current_user
 
     return role_checker
+
+
+def require_complete_profile(user: User = Depends(get_current_user)) -> User:
+    if not user.profile_complete:
+        raise HTTPException(403, "Complete your student profile first.")
+    return user
+
+
+def require_hostel_access(user: User, hostel_id: Optional[int]) -> None:
+    if user.role == UserRole.SUPER_ADMIN:
+        return
+    if hostel_id is None or user.role != UserRole.ADMIN or user.hostel_id != hostel_id:
+        raise HTTPException(403, "This case belongs to another hostel.")

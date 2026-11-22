@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 
 from app.core.exceptions import (
     AuctionNoActiveBidsError,
-    DegreeDurationActiveError,
     GracePeriodNotExpiredError,
     InvalidStateTransitionError,
     LifecycleDomainError,
@@ -89,11 +88,6 @@ async def grace_period_handler(request: Request, exc: GracePeriodNotExpiredError
 
 @app.exception_handler(UnauthorizedTransitionError)
 async def unauthorized_transition_handler(request: Request, exc: UnauthorizedTransitionError):
-    return JSONResponse(status_code=403, content={"detail": str(exc)})
-
-
-@app.exception_handler(DegreeDurationActiveError)
-async def degree_duration_handler(request: Request, exc: DegreeDurationActiveError):
     return JSONResponse(status_code=403, content={"detail": str(exc)})
 
 

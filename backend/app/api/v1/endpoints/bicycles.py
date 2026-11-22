@@ -21,9 +21,9 @@ from app.schemas.lifecycle import (
     TagAssetRequest,
 )
 from app.services.lifecycle_service import BicycleLifecycleService
-from app.api.v1.deps import get_current_user, require_roles
+from app.api.v1.deps import get_current_user, require_complete_profile, require_roles
 
-router = APIRouter(prefix="/bicycles", tags=["Bicycle Lifecycle"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/bicycles", tags=["Bicycle Lifecycle"], dependencies=[Depends(require_complete_profile)])
 
 
 def get_bicycle_or_404(bicycle_id: int, db: Session) -> Bicycle:
@@ -52,9 +52,9 @@ def create_bicycle(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Register a new bicycle in the system.
-    Strict Policy: ONLY students can own bicycles. Guards and Admins cannot own bicycles.
-    """
+    if current_user.role == UserRole.STUDENT:
+        raise HTTPException(403, "Submit a bicycle registration request for approval.")
+
     existing = db.scalar(select(Bicycle).where(Bicycle.asset_tag == payload.asset_tag))
     if existing:
         raise HTTPException(
@@ -64,10 +64,7 @@ def create_bicycle(
 
     bike_data = payload.model_dump()
     actor = current_user
-    if actor and actor.role == UserRole.STUDENT:
-        bike_data["owner_id"] = actor.id
-        bike_data["current_owner_id"] = actor.id
-    elif actor and actor.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.GUARD):
+    if actor.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.GUARD):
         # Staff cannot register bicycles as their own personal property
         if bike_data.get("owner_id") == actor.id:
             raise HTTPException(
@@ -253,12 +250,6 @@ def delete_bicycle(
     db.commit()
     return None
 
-
-# ---------------------------------------------------------------------------
-# Lifecycle transitions — thin wrappers over BicycleLifecycleService.
-# Domain errors (invalid state / unauthorized / grace period) are mapped to
-# HTTP 400/403 by the exception handlers in app/main.py.
-# ---------------------------------------------------------------------------
 
 def _transition(bicycle_id: int, db: Session, actor: User, payload_actor_id: Optional[int], action, **kwargs) -> Bicycle:
     """Lock the bicycle, verify the payload actor is the signed-in user, apply the transition, commit."""

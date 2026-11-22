@@ -2,7 +2,7 @@ from typing import List
 from datetime import datetime, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, status, HTTPException
-from app.api.v1.deps import get_current_user, require_roles
+from app.api.v1.deps import require_complete_profile, require_roles
 from app.models.auction import Auction, AuctionParticipant, AuctionStatus
 from app.models.bicycle import Bicycle
 from app.models.user import User, UserRole
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/auctions", tags=["Auctions"])
 
 
 @router.post("/", response_model=AuctionResponse, status_code=status.HTTP_201_CREATED)
-def create_auction(auction_in: AuctionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def create_auction(auction_in: AuctionCreate, db: Session = Depends(get_db), user: User = Depends(require_complete_profile)):
     if auction_in.created_by_id != user.id:
         raise HTTPException(403, "Creator must match the signed-in user")
     return AuctionService.create_auction(db, auction_in)
@@ -32,7 +32,7 @@ def get_auction_details(auction_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{auction_id}/bids", response_model=BidResponse, status_code=status.HTTP_201_CREATED)
-def place_bid(auction_id: int, bid_in: BidCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def place_bid(auction_id: int, bid_in: BidCreate, db: Session = Depends(get_db), user: User = Depends(require_complete_profile)):
     # Same transaction and lock as the existing engine; do not replace its algorithm.
     auction = db.query(Auction).filter_by(id=auction_id).with_for_update().first()
     if not auction:
@@ -54,14 +54,14 @@ def place_bid(auction_id: int, bid_in: BidCreate, db: Session = Depends(get_db),
 
 
 @router.get("/{auction_id}/participation")
-def participation(auction_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def participation(auction_id: int, db: Session = Depends(get_db), user: User = Depends(require_complete_profile)):
     AuctionService.get_auction(db, auction_id)
     return {"joined": db.get(AuctionParticipant, (auction_id, user.id)) is not None,
             "count": db.query(AuctionParticipant).filter_by(auction_id=auction_id).count()}
 
 
 @router.post("/{auction_id}/participants")
-def join_auction(auction_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def join_auction(auction_id: int, db: Session = Depends(get_db), user: User = Depends(require_complete_profile)):
     auction = db.query(Auction).filter_by(id=auction_id).with_for_update().first()
     if not auction:
         raise HTTPException(404, "Auction not found")
