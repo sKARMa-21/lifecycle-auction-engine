@@ -11,6 +11,7 @@ import AuctionsPage from './pages/AuctionsPage'
 import LaunchAuctionPage from './LaunchAuctionPage'
 import NotificationsPage from './pages/NotificationsPage'
 import RequestsPage from './pages/RequestsPage'
+import ScanPage from './pages/ScanPage'
 import type { User } from './types/user'
 import { authStorage } from './lib/authStorage'
 import { apiData } from './lib/api'
@@ -105,6 +106,7 @@ export default function App() {
           path="/requests"
           element={user && user.role !== 'guard' ? <RequestsPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}
         />
+        <Route path="/s/:token" element={<ScanPage user={user} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

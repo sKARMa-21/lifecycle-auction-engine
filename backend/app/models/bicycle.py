@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timezone
 from typing import Optional, List, TYPE_CHECKING
 from decimal import Decimal
@@ -23,6 +24,11 @@ class CycleState(str, Enum):
 
 
 BicycleStatus = CycleState
+
+
+def new_qr_token() -> str:
+    """Twelve uppercase hex characters, printed on the bicycle's QR sticker."""
+    return secrets.token_hex(6).upper()
 
 
 class Bicycle(Base):
@@ -79,7 +85,7 @@ class Bicycle(Base):
     tagged_as_asset_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     claim_deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
     case_hostel_id: Mapped[Optional[int]] = mapped_column(ForeignKey("hostels.id"), nullable=True)
-    qr_token: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
+    qr_token: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, default=new_qr_token)
 
     condition_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     estimated_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import PasswordField from '../components/PasswordField'
 import { API_BASE } from '../lib/api'
 import type { User } from '../types/user'
@@ -18,6 +18,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
   const navigate = useNavigate()
+  const location = useLocation()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -48,7 +49,8 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
           setConfirmation('')
         } else {
           onLogin(data.user, data.access_token)
-          navigate('/dashboard')
+          const from = (location.state as { from?: unknown } | null)?.from
+          navigate(typeof from === 'string' && from.startsWith('/s/') ? from : '/dashboard')
         }
       } else {
         setErrorMsg(typeof data.detail === 'string' ? data.detail : 'Authentication failed. Check the form and try again.')

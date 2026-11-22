@@ -1,12 +1,14 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+const backend = 'http://127.0.0.1:8000'
+
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api/v1': 'http://127.0.0.1:8000',
-      '/ws/auctions': { target: 'ws://127.0.0.1:8000', ws: true },
+      '/api': backend,
+      '/ws': { target: backend, ws: true },
     },
   },
 })

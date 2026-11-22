@@ -30,7 +30,8 @@ export default function BicycleLookup({ autoFocus = false, camera = false }: { a
       }
       if (!identifier || signal.aborted) return
       if (typeof source !== 'string') setToken(identifier)
-      const bicycle = await apiData<Bicycle>(`/bicycles/scan/lookup?token=${encodeURIComponent(identifier)}`, { signal })
+      const code = identifier.match(/^(?:https?:\/\/[^/?#]+)?\/s\/([^/?#]+)\/?(?:[?#].*)?$/i)?.[1] ?? identifier
+      const bicycle = await apiData<Bicycle>(`/bicycles/scan/lookup?token=${encodeURIComponent(code)}`, { signal })
       if (!signal.aborted) navigate(`/bicycles/${bicycle.id}`)
     } catch (err) {
       if (!signal.aborted) setError((err as Error).message)

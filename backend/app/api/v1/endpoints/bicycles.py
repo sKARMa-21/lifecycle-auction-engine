@@ -69,9 +69,10 @@ def present(bicycle: Bicycle, user: User, db: Session) -> BicycleOut:
         message = f"Impounded. Claim deadline: {deadline:%d %b %Y %H:%M} UTC." if claim_open else "Impounded. The claim period has ended."
     elif state == "auctionable":
         message = "In the campus auction pool."
+    is_owner = user.role == UserRole.STUDENT and owner_of(bicycle) == user.id
     if user.role == UserRole.GUARD and state == "active":
         actions = ["tag_asset"]
-    elif user.role == UserRole.STUDENT and owner_of(bicycle) == user.id:
+    elif is_owner:
         request = db.scalar(select(AuctionRequest).where(AuctionRequest.bicycle_id == bicycle.id).order_by(AuctionRequest.id.desc()).limit(1))
         pending = request is not None and request.status == "pending"
         actions = ["claim"] if claim_open else ["request_auction"] if state == "active" and not pending else []
@@ -79,7 +80,8 @@ def present(bicycle: Bicycle, user: User, db: Session) -> BicycleOut:
             message = "Your auction request is waiting for your hostel admin."
         elif state == "active" and request is not None and request.status == "rejected":
             message = "Your auction request was rejected" + (f": {request.note}" if request.note else ".")
-    return BicyclePublic.model_validate(bicycle).model_copy(update={"actions": actions, "message": message})
+    return BicyclePublic.model_validate(bicycle).model_copy(
+        update={"actions": actions, "message": message, "qr_token": bicycle.qr_token if is_owner else None})
 
 
 @router.post("/", response_model=BicycleOut, status_code=status.HTTP_201_CREATED)
@@ -121,7 +123,7 @@ def lookup_bicycle(token: str, db: Session = Depends(get_db), actor: User = Depe
     """Read-only lookup by QR token, asset tag or chassis/serial number."""
     token = token.strip()
     bicycle = db.scalar(select(Bicycle).where(
-        (Bicycle.asset_tag == token) | (Bicycle.qr_token == token) | (Bicycle.serial_number == token)))
+        (Bicycle.asset_tag == token) | (Bicycle.qr_token == token.upper()) | (Bicycle.serial_number == token)))
     if not bicycle:
         raise HTTPException(404, "No bicycle matches that QR token, asset tag or serial number")
     return present(bicycle, actor, db)

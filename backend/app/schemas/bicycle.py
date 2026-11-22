@@ -46,6 +46,7 @@ class BicyclePublic(BaseModel):
     owner_id: Optional[int] = None
     current_owner_id: Optional[int] = None
     claim_deadline: Optional[datetime] = None
+    qr_token: Optional[str] = None
     created_at: datetime
     actions: List[str] = []
     message: Optional[str] = None
@@ -60,7 +61,6 @@ class BicycleRead(BicyclePublic):
     reported_by_id: Optional[int] = None
     asset_tagged_at: Optional[datetime] = None
     case_hostel_id: Optional[int] = None
-    qr_token: Optional[str] = None
     cycle_condition: Optional[str] = None
     market_value: Optional[Decimal] = None
     years_used: Optional[int] = None

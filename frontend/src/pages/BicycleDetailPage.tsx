@@ -5,6 +5,26 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import type { Bicycle } from '../types/bicycle'
 import type { StudentSummary, User } from '../types/user'
 import LifecycleTimeline from '../components/LifecycleTimeline'
+import BicycleQrSticker from '../components/BicycleQrSticker'
+
+const shrinkPhoto = (file: File) => new Promise<string>((resolve, reject) => {
+  const img = new Image()
+  const url = URL.createObjectURL(file)
+  img.onload = () => {
+    URL.revokeObjectURL(url)
+    const scale = Math.min(1, 1600 / Math.max(img.width, img.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.width * scale)
+    canvas.height = Math.round(img.height * scale)
+    canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height)
+    resolve(canvas.toDataURL('image/jpeg', 0.8))
+  }
+  img.onerror = () => {
+    URL.revokeObjectURL(url)
+    reject(new Error('This photo could not be read. Try another one, or take it with the camera.'))
+  }
+  img.src = url
+})
 
 interface BicycleDetailPageProps {
   user: User
@@ -276,6 +296,8 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
         </div>
       </div>
 
+      {bicycle.qr_token && <BicycleQrSticker assetTag={bicycle.asset_tag} token={bicycle.qr_token} />}
+
       {showTagAssetModal && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -291,8 +313,23 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
                 <textarea placeholder="e.g. Found unlocked and unclaimed for 10+ days." value={tagAssetForm.notes} onChange={(e) => setTagAssetForm({ ...tagAssetForm, notes: e.target.value })} required rows={3} style={{ width: '100%', resize: 'vertical' }} />
               </div>
               <div className="field">
-                <label>Proof Photo URL * <span style={{ fontWeight: 400, fontSize: '0.82em' }}>(https://...)</span></label>
-                <input type="url" placeholder="https://example.com/photo.jpg" value={tagAssetForm.proof_image_url} onChange={(e) => setTagAssetForm({ ...tagAssetForm, proof_image_url: e.target.value })} required />
+                <label>Proof Photo * <span style={{ fontWeight: 400, fontSize: '0.82em' }}>(take a photo or choose one)</span></label>
+                <input type="file" accept="image/*" required onChange={async (e) => {
+                  const input = e.target
+                  const file = input.files?.[0]
+                  if (!file) return
+                  try {
+                    const photo = await shrinkPhoto(file)
+                    setTagAssetForm((prev) => ({ ...prev, proof_image_url: photo }))
+                  } catch (err) {
+                    input.value = ''
+                    setTagAssetForm((prev) => ({ ...prev, proof_image_url: '' }))
+                    alert((err as Error).message)
+                  }
+                }} />
+                {tagAssetForm.proof_image_url && (
+                  <img src={tagAssetForm.proof_image_url} alt="Proof photo preview" style={{ display: 'block', maxWidth: '100%', maxHeight: 180, marginTop: 8, borderRadius: 6 }} />
+                )}
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-toggle" onClick={() => { setShowTagAssetModal(false); setTagAssetForm({ location: '', notes: '', proof_image_url: '' }) }}>Cancel</button>
