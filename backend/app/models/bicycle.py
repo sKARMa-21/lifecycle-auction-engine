@@ -22,7 +22,6 @@ class CycleState(str, Enum):
     DEAD = "dead"
 
 
-# Alias kept for backward compat with any code that referenced BicycleStatus
 BicycleStatus = CycleState
 
 
@@ -31,7 +30,6 @@ class Bicycle(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    # Identification
     asset_tag: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     serial_number: Mapped[Optional[str]] = mapped_column(String(120), unique=True, nullable=True)
     brand: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -40,7 +38,6 @@ class Bicycle(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
-    # Lifecycle state — canonical enum field used by lifecycle service
     current_state: Mapped[CycleState] = mapped_column(
         SQLEnum(CycleState, name="cycle_state", values_callable=lambda x: [e.value for e in x]),
         default=CycleState.ACTIVE,
@@ -48,7 +45,6 @@ class Bicycle(Base):
         nullable=False,
     )
 
-    # Legacy string status column kept for BicycleRead schema responses
     status: Mapped[str] = mapped_column(
         String(30),
         default=CycleState.ACTIVE.value,
@@ -56,7 +52,6 @@ class Bicycle(Base):
         nullable=False,
     )
 
-    # Ownership & reporting (jayesh's lifecycle service FKs)
     owner_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -68,7 +63,6 @@ class Bicycle(Base):
         nullable=True,
     )
 
-    # Canonical FK used by skarma-dev / QR sticker models
     current_owner_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
@@ -81,17 +75,16 @@ class Bicycle(Base):
     found_location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     found_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # Transition tracking
     asset_tagged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     tagged_as_asset_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_deadline: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
+    case_hostel_id: Mapped[Optional[int]] = mapped_column(ForeignKey("hostels.id"), nullable=True)
     qr_token: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
 
-    # Condition / valuation
     condition_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     estimated_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True)
     last_known_location: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
 
-    # Sold / Post-auction analytics
     cycle_condition: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     market_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
     years_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -110,7 +103,6 @@ class Bicycle(Base):
         nullable=False,
     )
 
-    # Relationships
     owner = relationship("User", back_populates="owned_bicycles", foreign_keys=[owner_id])
     reported_by = relationship("User", foreign_keys=[reported_by_id])
     current_owner: Mapped[Optional["User"]] = relationship(

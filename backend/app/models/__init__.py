@@ -4,6 +4,7 @@ from app.models.bicycle import Bicycle, CycleState, BicycleStatus
 from app.models.registration import BicycleRegistration
 from app.models.lifecycle import LifecycleEvent
 from app.models.auction import Auction, AuctionStatus, Bid
+from app.models.case import AuctionRequest, Notification
 
 __all__ = [
     "Hostel",
@@ -19,4 +20,6 @@ __all__ = [
     "Auction",
     "AuctionStatus",
     "Bid",
+    "AuctionRequest",
+    "Notification",
 ]
