@@ -1,6 +1,6 @@
 from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -98,13 +98,19 @@ def create_bicycle(payload: BicycleCreate, current_user: User = Depends(get_curr
 
 @router.get("/", response_model=List[BicycleOut])
 def list_bicycles(skip: int = 0, limit: int = 100, owner_id: Optional[int] = None,
-                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Retrieve bicycles. Students get only their own; guards use the lookup instead."""
+                  current_user: User = Depends(get_current_user), db: Session = Depends(get_db), managed: bool = False):
+    """List bicycles, with optional hostel scope for admins. Guards use lookup."""
     if current_user.role == UserRole.GUARD:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Guards find bicycles with the lookup.")
     if current_user.role == UserRole.STUDENT:
         owner_id = current_user.id
     query = select(Bicycle)
+    if managed and current_user.role == UserRole.ADMIN:
+        if current_user.hostel_id is None:
+            return []
+        # Match bike_hostel: the case takes precedence over the current or original owner.
+        query = query.outerjoin(User, User.id == func.coalesce(Bicycle.current_owner_id, Bicycle.owner_id))
+        query = query.where(func.coalesce(Bicycle.case_hostel_id, User.hostel_id) == current_user.hostel_id)
     if owner_id is not None:
         query = query.where((Bicycle.owner_id == owner_id) | (Bicycle.current_owner_id == owner_id))
     return [present(b, current_user, db) for b in db.scalars(query.offset(skip).limit(limit).order_by(Bicycle.id.desc()))]

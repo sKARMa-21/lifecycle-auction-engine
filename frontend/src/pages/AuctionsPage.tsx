@@ -89,14 +89,9 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   return (
     <div className="page-wide">
       <PageHeader
-        badge="Auction Engine"
         title="Campus Bicycle Auctions"
         role={user.role}
         onLogout={onLogout}
-        links={[
-          { to: '/bicycles', label: 'Bicycles' },
-          { to: '/dashboard', label: 'Dashboard' },
-        ]}
       />
 
       {outbidNotice && (

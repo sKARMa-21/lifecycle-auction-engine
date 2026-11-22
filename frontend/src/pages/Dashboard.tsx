@@ -1,80 +1,33 @@
-import { apiData, apiFetch, jsonRequest } from '../lib/api'
+import { apiData, jsonRequest } from '../lib/api'
+import BicycleLookup from '../components/BicycleLookup'
 import PageHeader from '../components/PageHeader'
 import HostelSelect from '../components/HostelSelect'
 import PasswordField from '../components/PasswordField'
 import { useState, useEffect, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import type { Hostel, User, UserRole } from '../types/user'
+import { isAuctionLive } from '../lib/auction'
+import type { Hostel, User } from '../types/user'
 import type { Bicycle } from '../types/bicycle'
 import type { Auction } from '../types/auction'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const bicycleStats = [
+  { status: 'active', label: 'Active' },
+  { status: 'asset', label: 'Awaiting claim' },
+  { status: 'auctionable', label: 'Ready for auction' },
+  { status: 'sold', label: 'Sold' },
+]
 
 interface DashboardProps {
   user: User
   onLogout: () => void
 }
 
-interface RoleConfig {
-  badge: string
-  title: string
-  canLaunchAuction: boolean
-  canManageStaff: boolean
-  bicyclesNavLabel: string
-  showAuctionsNav: boolean
-  primaryAction: { label: string; to: string }
-  secondaryAction?: { label: string; to: string }
-}
-
-const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
-  super_admin: {
-    badge: 'Super Admin',
-    title: 'Dashboard',
-    canLaunchAuction: true,
-    canManageStaff: true,
-    bicyclesNavLabel: 'Fleet Registry',
-    showAuctionsNav: true,
-    primaryAction: { label: 'Fleet Registry →', to: '/bicycles' },
-    secondaryAction: { label: 'Auction Pool →', to: '/auctions' },
-  },
-  admin: {
-    badge: 'Admin',
-    title: 'Dashboard',
-    canLaunchAuction: true,
-    canManageStaff: false,
-    bicyclesNavLabel: 'Fleet Registry',
-    showAuctionsNav: true,
-    primaryAction: { label: 'Fleet Registry →', to: '/bicycles' },
-    secondaryAction: { label: 'Auction Pool →', to: '/auctions' },
-  },
-  guard: {
-    badge: 'Guard',
-    title: 'Dashboard',
-    canLaunchAuction: false,
-    canManageStaff: false,
-    bicyclesNavLabel: 'Bicycle Lookup',
-    showAuctionsNav: false,
-    primaryAction: { label: 'Bicycle Lookup →', to: '/bicycles' },
-  },
-  student: {
-    badge: 'Student',
-    title: 'Dashboard',
-    canLaunchAuction: false,
-    canManageStaff: false,
-    bicyclesNavLabel: 'My Bicycles',
-    showAuctionsNav: true,
-    primaryAction: { label: 'My Bicycles →', to: '/bicycles' },
-    secondaryAction: { label: 'Auction Pool →', to: '/auctions' },
-  },
-}
-
 export default function Dashboard({ user, onLogout }: DashboardProps) {
-  const [bicycles, setBicycles] = useState<Bicycle[]>([])
-  const [auctions, setAuctions] = useState<Auction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
+  const [bicycles, setBicycles] = useState<Bicycle[] | null>(null)
+  const [auctionFeed, setAuctionFeed] = useState<{ items: Auction[]; checkedAt: number } | null>(null)
+  const [bicycleError, setBicycleError] = useState(false)
+  const [auctionError, setAuctionError] = useState(false)
 
-  const [showStaffForm, setShowStaffForm] = useState(false)
   const [staffName, setStaffName] = useState('')
   const [staffEmail, setStaffEmail] = useState('')
   const [staffPassword, setStaffPassword] = useState('')
@@ -88,39 +41,44 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
   const [staffStatusMsg, setStaffStatusMsg] = useState<{ text: string; error: boolean } | null>(null)
   const [staffLoading, setStaffLoading] = useState(false)
 
-  const currentRole = (user.role as UserRole) || 'student'
-  const config = ROLE_CONFIGS[currentRole] || ROLE_CONFIGS.student
+  const isGuard = user.role === 'guard'
+  const isSuperAdmin = user.role === 'super_admin'
+  const isAdmin = isSuperAdmin || user.role === 'admin'
 
   useEffect(() => {
-    let cancelled = false
-    if (!config.canLaunchAuction) return
-    Promise.all([
-      apiFetch(`${API}/bicycles/`).then((r) => {
-        if (!r.ok) throw new Error('Could not load dashboard data.')
-        return r.json()
-      }),
-      apiFetch(`${API}/auctions/`).then((r) => {
-        if (!r.ok) throw new Error('Could not load dashboard data.')
-        return r.json()
-      }),
-    ])
-      .then(([b, a]) => {
-        if (cancelled) return
-        setLoadError('')
-        setBicycles(Array.isArray(b) ? b : [])
-        setAuctions(Array.isArray(a) ? a.filter((auction: Auction) => new Date(auction.ends_at).getTime() > Date.now()) : [])
-      })
-      .catch(() => { if (!cancelled) setLoadError('Could not load dashboard data.') })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [user.id, config.canLaunchAuction])
+    if (isGuard) return
+    const controller = new AbortController()
+    const options = { signal: controller.signal }
+
+    async function loadBicycles() {
+      const list: Bicycle[] = []
+      const limit = 100
+      for (let skip = 0; ; skip += limit) {
+        const page = await apiData<Bicycle[]>(`/bicycles/?managed=${isAdmin}&skip=${skip}&limit=${limit}`, options)
+        list.push(...page)
+        if (page.length < limit) break
+      }
+      return isAdmin ? list : list.filter((bike) => (bike.current_owner_id ?? bike.owner_id) === user.id)
+    }
+
+    loadBicycles().then(setBicycles).catch(() => { if (!options.signal.aborted) setBicycleError(true) })
+    const loadAuctions = () => apiData<Auction[]>('/auctions/', options)
+      .then((items) => { setAuctionFeed({ items, checkedAt: Date.now() }); setAuctionError(false) })
+      .catch(() => { if (!options.signal.aborted) setAuctionError(true) })
+
+    loadAuctions()
+    const timer = window.setInterval(loadAuctions, 30000)
+    return () => { controller.abort(); window.clearInterval(timer) }
+  }, [isGuard, isAdmin, user.id, user.hostel_id])
 
   useEffect(() => {
-    if (!config.canManageStaff) return
-    Promise.all([apiData<Hostel[]>('/auth/hostels'), apiData<User[]>('/auth/users')])
-      .then(([available, users]) => { setHostels(available); setDirectory(users) })
+    if (isAdmin) {
+      apiData<Hostel[]>('/auth/hostels').then(setHostels)
+        .catch((err: Error) => { if (isSuperAdmin) setDirectoryError(err.message) })
+    }
+    if (isSuperAdmin) apiData<User[]>('/auth/users').then(setDirectory)
       .catch((err: Error) => setDirectoryError(err.message))
-  }, [config.canManageStaff])
+  }, [isAdmin, isSuperAdmin])
 
   async function assignHostel(id: number, hostelId: string) {
     setAssigning(true)
@@ -135,11 +93,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       setAssigning(false)
     }
   }
-
-  const activeCount = bicycles.filter((b) => b.status === 'active').length
-  const assetCount = bicycles.filter((b) => b.status === 'asset').length
-  const auctionableCount = bicycles.filter((b) => b.status === 'auctionable').length
-  const soldCount = bicycles.filter((b) => b.status === 'sold').length
 
   const handleCreateStaff = async (e: FormEvent) => {
     e.preventDefault()
@@ -170,57 +123,109 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
     }
   }
 
+  const hostel = hostels.find(({ id }) => id === user.hostel_id)?.name
+  const role = isSuperAdmin ? 'Super admin' : isAdmin ? 'Admin' : isGuard ? 'Guard' : 'Student'
+  const now = auctionFeed?.checkedAt ?? 0
+  const openAuctions = auctionFeed?.items.filter((auction) => isAuctionLive(auction, now) ||
+    (auction.status === 'scheduled' && Date.parse(auction.starts_at) > now))
+    .sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at))
+
+  const shortcuts = [
+    ...(!isGuard ? [
+      { to: '/bicycles/registrations', title: isAdmin ? 'Review registrations' : 'Cycle registration',
+        text: isAdmin ? 'Approve or reject registration requests.' : 'Register a bicycle or check your approval status.' },
+      { to: '/requests', title: isAdmin ? 'Auction requests' : 'My auction requests',
+        text: isAdmin ? 'Review bicycles submitted for auction.' : 'Check the status of the bicycles you submitted.' },
+    ] : []),
+    ...(isAdmin ? [{ to: '/launch-auction', title: 'Launch auction', text: 'Schedule bidding for an eligible bicycle.' }] : []),
+    { to: '/notifications', title: 'Notifications', text: 'Read updates about bicycles and auctions.' },
+  ]
+
   return (
     <div className="page-wide">
-      <PageHeader
-        badge={config.badge}
-        title={config.title}
-        role={user.role}
-        onLogout={onLogout}
-        links={[
-          { to: '/bicycles', label: config.bicyclesNavLabel },
-          { to: '/auctions', label: 'Auction Pool', visible: config.showAuctionsNav },
-          { to: '/launch-auction', label: '+ Launch Auction', visible: config.canLaunchAuction },
-        ]}
-      />
+      <PageHeader title="Dashboard" subtitle={`Welcome, ${user.full_name} · ${role}${hostel && !isSuperAdmin ? ` · ${hostel}` : ''}`}
+        role={user.role} onLogout={onLogout} />
 
-      <div className="card-wide dashboard-welcome-card">
-        <div className="welcome-flex">
-          <div>
-            <h3>Welcome, {user.full_name}</h3>
-          </div>
-          <div className="welcome-actions">
-            <Link to={config.primaryAction.to} className="btn-submit btn-sm" style={{ textDecoration: 'none', textAlign: 'center' }}>
-              {config.primaryAction.label}
-            </Link>
-            {config.secondaryAction && (
-              <Link to={config.secondaryAction.to} className="btn-secondary btn-sm" style={{ textDecoration: 'none', textAlign: 'center' }}>
-                {config.secondaryAction.label}
-              </Link>
-            )}
-            {config.canLaunchAuction && (
-              <Link to="/launch-auction" className="btn-toggle btn-sm" style={{ textDecoration: 'none', textAlign: 'center' }}>
-                + Launch Auction
-              </Link>
-            )}
-            {config.canManageStaff && (
-              <button
-                type="button"
-                className="btn-toggle btn-sm"
-                onClick={() => setShowStaffForm(!showStaffForm)}
-                style={{ textAlign: 'center' }}
-              >
-                {showStaffForm ? 'Hide Staff Form' : '+ Add Staff'}
-              </button>
-            )}
-          </div>
+      {isGuard && <BicycleLookup autoFocus />}
+      {isAdmin && (
+        <div className="kpi-grid" aria-label="Bicycle statistics">
+          {bicycleStats.map(({ status, label }) => (
+            <div className="kpi-card" key={status}>
+              <span className={`kpi-label status-badge status-${status}`}>{label}</span>
+              <strong className={`kpi-num status-text-${status}`}>
+                {bicycleError ? '—' : bicycles?.filter((bike) => bike.status === status).length ?? '…'}
+              </strong>
+            </div>
+          ))}
         </div>
+      )}
+
+      {!isGuard && (
+        <section className="card-wide">
+          <div className="detail-header-flex">
+            <h3>{isSuperAdmin ? 'Campus bicycles' : isAdmin ? 'Hostel bicycles' : 'My bicycles'}</h3>
+            <Link to="/bicycles" className="btn-link">{isAdmin ? 'Full registry' : 'Manage my bicycles'}</Link>
+          </div>
+          {bicycleError ? <p className="alert alert-error" role="alert">Could not load bicycles.</p> :
+            !bicycles ? <p role="status">Loading bicycles…</p> :
+            !bicycles.length ? <p className="dashboard-note">{
+              isAdmin && !isSuperAdmin
+                ? user.hostel_id ? 'No bicycles for this hostel yet.' : 'No hostel is assigned to your account.'
+                : isSuperAdmin ? 'No bicycles in the registry yet.' : 'You have no registered bicycles yet.'
+            }</p> : (
+              <div className="dashboard-table">
+                <table className="simple-table">
+                  <thead><tr><th>Asset tag</th><th>Bicycle</th><th>Status</th></tr></thead>
+                  <tbody>{bicycles.map((bike) => (
+                    <tr key={bike.id}>
+                      <td><Link to={`/bicycles/${bike.id}`} className="btn-link">{bike.asset_tag}</Link></td>
+                      <td>{[bike.brand, bike.model, bike.color].filter(Boolean).join(' · ') || '—'}</td>
+                      <td>{isAdmin ? <span className={`status-badge status-${bike.status}`}>
+                        {bicycleStats.find(({ status }) => status === bike.status)?.label ?? bike.status ?? '—'}
+                      </span> : bike.message || 'Registered'}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+        </section>
+      )}
+
+      {!isGuard && (
+        <section className="card-wide">
+          <div className="detail-header-flex">
+            <h3>Campus auctions</h3>
+            <Link to="/auctions" className="btn-link">Browse auctions</Link>
+          </div>
+          {auctionError ? <p className="alert alert-error" role="alert">Could not load auctions.</p> :
+            !openAuctions ? <p role="status">Loading auctions…</p> :
+            !openAuctions.length ? <p className="dashboard-note">No live or upcoming auctions.</p> : (
+              <ul className="dashboard-list">{openAuctions.slice(0, 3).map((auction) => {
+                const live = isAuctionLive(auction, now)
+                const date = new Date(live ? auction.ends_at : auction.starts_at)
+                return <li key={auction.id}>
+                  {live ? <Link to={`/auctions/${auction.id}`} className="btn-link">{auction.title}</Link> : <strong>{auction.title}</strong>}
+                  <span className={live ? 'status-text-active' : 'dashboard-note'}>
+                    {live ? 'Live · Ends' : 'Starts'} {date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  </span>
+                </li>
+              })}</ul>
+            )}
+        </section>
+      )}
+
+      <div className="dashboard-actions">
+        {shortcuts.map(({ to, title, text }) => (
+          <Link key={to} to={to} className="card-wide">
+            <h3>{title}</h3>
+            <p className="dashboard-note">{text}</p>
+          </Link>
+        ))}
       </div>
 
-      {config.canManageStaff && showStaffForm && (
-        <div className="card-wide" style={{ marginTop: '16px' }}>
-          <h3>Add Staff</h3>
-
+      {isSuperAdmin && (
+        <details className="card-wide staff-form">
+          <summary>Add staff</summary>
           {staffStatusMsg && (
             <div className={`alert ${staffStatusMsg.error ? 'alert-error' : 'alert-success'}`}>
               {staffStatusMsg.text}
@@ -276,10 +281,10 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
               </button>
             </div>
           </form>
-        </div>
+        </details>
       )}
 
-      {config.canManageStaff && (
+      {isSuperAdmin && (
         <div className="card-wide">
           <h3>Staff and users</h3>
           {directoryError && <p className="alert alert-error" role="alert">{directoryError}</p>}
@@ -299,38 +304,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
             </table>
           </div>
         </div>
-      )}
-
-      {loadError && <div className="alert alert-error" role="alert">{loadError}</div>}
-      {config.canLaunchAuction && (
-      <div className="kpi-grid">
-        <Link to="/bicycles" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <span className="kpi-label">Active Bicycles</span>
-          <span className="kpi-num status-text-active">{loading ? '...' : loadError ? '—' : activeCount}</span>
-        </Link>
-
-        <Link to="/bicycles" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <span className="kpi-label">Awaiting Claim</span>
-          <span className="kpi-num status-text-asset">{loading ? '...' : loadError ? '—' : assetCount}</span>
-        </Link>
-
-        <Link to={config.canLaunchAuction ? '/launch-auction' : '/bicycles'} className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <span className="kpi-label">Ready for Auction</span>
-          <span className="kpi-num status-text-auctionable">{loading ? '...' : loadError ? '—' : auctionableCount}</span>
-        </Link>
-
-        {config.showAuctionsNav && (
-          <Link to="/auctions" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <span className="kpi-label">Auction Pool</span>
-            <span className="kpi-num status-text-extended">{loading ? '...' : loadError ? '—' : auctions.length}</span>
-          </Link>
-        )}
-
-        <Link to="/bicycles" className="kpi-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <span className="kpi-label">Sold</span>
-          <span className="kpi-num status-text-sold">{loading ? '...' : loadError ? '—' : soldCount}</span>
-        </Link>
-      </div>
       )}
     </div>
   )

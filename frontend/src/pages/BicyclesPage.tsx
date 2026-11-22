@@ -1,7 +1,8 @@
-import { apiData, apiFetch } from '../lib/api'
+import { apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
+import BicycleLookup from '../components/BicycleLookup'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import type { StudentSummary, User } from '../types/user'
 import type { Bicycle } from '../types/bicycle'
 
@@ -27,8 +28,6 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const navigate = useNavigate()
-  const [lookupToken, setLookupToken] = useState('')
   const isStudent = user.role === 'student'
   const isGuard = user.role === 'guard'
   const isAuthority = user.role === 'admin' || user.role === 'super_admin'
@@ -147,44 +146,19 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     }
   }
 
-  const lookup = (e: FormEvent) => {
-    e.preventDefault()
-    setMsg(null)
-    apiData<Bicycle>(`/bicycles/scan/lookup?token=${encodeURIComponent(lookupToken.trim())}`)
-      .then((bike) => navigate(`/bicycles/${bike.id}`)).catch((err: Error) => setMsg({ text: err.message, isError: true }))
-  }
-
-  const lookupCard = (
-    <div className="card-wide">
-      <h3>Find a Bicycle</h3>
-      <p className="subtitle">Scan or type a QR token, asset tag, or chassis / serial number. Looking up a bicycle never changes it.</p>
-      <form onSubmit={lookup} className="form-inline">
-        <input placeholder="QR token / asset tag / serial number *" value={lookupToken} onChange={(e) => setLookupToken(e.target.value)} required />
-        <button type="submit" className="btn-submit btn-sm">Find Bicycle</button>
-      </form>
-    </div>
-  )
-
   if (isGuard) return (
     <div className="page-wide">
-      <PageHeader badge="Guard" title="Bicycle Lookup" role={user.role} onLogout={onLogout} links={[{ to: '/dashboard', label: 'Dashboard' }]} />
-      {msg && <div className="alert alert-error">{msg.text}</div>}
-      {lookupCard}
+      <PageHeader title="Bicycle Lookup" role={user.role} onLogout={onLogout} />
+      <BicycleLookup autoFocus />
     </div>
   )
 
   return (
     <div className="page-wide">
       <PageHeader
-        badge={isStudent ? 'My Cycles' : 'Campus Fleet'}
         title={isStudent ? 'My Registered Bicycles' : 'Bicycles & Asset Registry'}
         role={user.role}
         onLogout={onLogout}
-        links={[
-          { to: '/auctions', label: 'Auctions' },
-          { to: '/dashboard', label: 'Dashboard' },
-          { to: '/bicycles/registrations', label: isStudent ? 'Register New Cycle' : 'Review Registrations', visible: isStudent || isAuthority },
-        ]}
       />
 
       {msg && (
@@ -193,7 +167,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
         </div>
       )}
 
-      {isAuthority && lookupCard}
+      {isAuthority && <BicycleLookup />}
 
       {!isStudent && <div className="card-wide">
         <h3>{editingId ? `Edit Bicycle #${editingId}` : 'Register New Campus Bicycle'}</h3>

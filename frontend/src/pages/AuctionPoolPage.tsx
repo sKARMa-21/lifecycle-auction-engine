@@ -82,8 +82,8 @@ function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => 
   const countdown = `${days ? `${days}d ` : ''}${days || hours ? `${hours}h ` : ''}${minutes}m ${seconds % 60}s left`
   const viewing = user.role !== 'student' || user.id === auction?.created_by_id
   return <div className="auction-shell"><div className="page-wide">
-    <PageHeader badge={`Auction pool · #${id}`} title={auction?.title || 'Auction pool'} role={user.role} onLogout={onLogout}
-      links={[{ to: '/auctions', label: 'All auctions' }, ...(auction ? [{ to: `/bicycles/${auction.bicycle_id}`, label: 'Inspect bicycle' }] : [])]} />
+    <PageHeader title={auction?.title || 'Auction pool'} role={user.role} onLogout={onLogout}
+      action={auction ? { to: `/bicycles/${auction.bicycle_id}`, label: 'Inspect bicycle' } : undefined} />
     {error && <p className="pool-notice" role="alert">{error}</p>}
     {!auction ? <p>{error ? 'Return to the auction catalog or try again shortly.' : 'Loading auction…'}</p> : !live ? <section className="pool-unavailable">
       <h3>{new Date(auction.starts_at).getTime() > now ? 'This auction hasn’t started yet.' : 'This auction is closed.'}</h3>

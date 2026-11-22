@@ -116,8 +116,7 @@ export default function RegistrationsPage({ user, onLogout }: { user: User; onLo
 
   return (
     <div className="page-wide">
-      <PageHeader badge="Bicycles" title={student ? 'Cycle registration' : 'Review cycle registrations'}
-        role={user.role} onLogout={onLogout} links={[{ to: '/bicycles', label: 'Bicycles' }]} />
+      <PageHeader title={student ? 'Cycle registration' : 'Review cycle registrations'} role={user.role} onLogout={onLogout} />
       {error && <p className="alert alert-error" role="alert">{error}</p>}
       {message && <p className="alert alert-success" role="status">{message}</p>}
       {student && !showForm && (

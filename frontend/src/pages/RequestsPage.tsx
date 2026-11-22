@@ -46,9 +46,7 @@ export default function RequestsPage({ user, onLogout }: { user: User; onLogout:
 
   return (
     <div className="page-wide">
-      <PageHeader badge={isStudent ? 'My Auctions' : 'Approval Queue'} title={isStudent ? 'My Auction Requests' : 'Auction Requests'}
-        role={user.role} onLogout={onLogout}
-        links={[{ to: '/bicycles', label: isStudent ? 'My Bicycles' : 'Fleet Registry' }, { to: '/dashboard', label: 'Dashboard' }]} />
+      <PageHeader title={isStudent ? 'My Auction Requests' : 'Auction Requests'} role={user.role} onLogout={onLogout} />
       {msg && <div className={`alert ${msg.isError ? 'alert-error' : 'alert-success'}`}>{msg.text}</div>}
       <div className="card-wide">
         <p className="subtitle">

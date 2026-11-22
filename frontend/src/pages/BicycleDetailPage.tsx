@@ -159,15 +159,10 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
   return (
     <div className="page-wide">
       <PageHeader
-        badge="Lifecycle Engine"
         title={`Bicycle #${bicycle.id}: ${bicycle.asset_tag}`}
         role={user.role}
         onLogout={onLogout}
-        links={[
-          { to: '/bicycles', label: '← Bicycles' },
-          { to: '/auctions', label: 'Auctions' },
-          { to: '/dashboard', label: 'Dashboard' },
-        ]}
+        action={user.role === 'guard' ? { to: '/auctions', label: 'Browse auctions' } : undefined}
       />
 
       {errorMsg && <div className="alert alert-error">{errorMsg}</div>}

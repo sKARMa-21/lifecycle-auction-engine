@@ -102,14 +102,9 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
   return (
     <div className="page-wide">
       <PageHeader
-        badge="CycleEngine"
         title={editId ? 'Edit Scheduled Auction' : 'Launch New Auction'}
         role={user.role}
         onLogout={onLogout}
-        links={[
-          { to: '/dashboard', label: 'Dashboard' },
-          { to: '/bicycles', label: 'Bicycles' },
-        ]}
       />
 
       {msg && <div className="alert">{msg}</div>}

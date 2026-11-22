@@ -2,6 +2,8 @@
     --text: #ecf2ff;
     --text-muted: #94a8c8;
     --border: #1b2c47;
+    --card-bg: #152441;
+    --accent: #b8ceff;
     min-height: 100vh;
     background: #080f20;
     color: var(--text);
@@ -11,18 +13,12 @@
     max-width: 1200px;
 }
 
-.auction-shell .brand-badge,
-.auction-shell .role-pill {
-    background: #152441;
-    color: #b8ceff;
-}
-
 .auction-shell .btn-toggle {
     background: transparent;
     color: #b8c9e7;
 }
 
-.auction-shell .bar h2 {
+.auction-shell .bar h1 {
     font-size: clamp(1.2rem, 3vw, 1.7rem);
     letter-spacing: -.025em;
 }

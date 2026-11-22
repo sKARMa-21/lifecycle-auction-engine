@@ -60,30 +60,27 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
   }
 
   return (
-    <div className="auth-page">
+    <main className="auth-page login-page">
       <div className="auth-card">
-        <div className="brand-header">
-          <span className="brand-badge">Lifecycle & Auction</span>
-          <h2>{isRegister ? 'Create Campus Account' : 'Welcome Back'}</h2>
-          <p className="subtitle">
-            {isRegister
-              ? 'Register with your student or campus email ID'
-              : 'Sign in to manage bicycles, ownership, and campus auctions'}
-          </p>
-        </div>
+        <header className="brand-header">
+          <span className="nav-brand">CycleEngine</span>
+          <h1>{isRegister ? 'Create an account' : 'Sign in'}</h1>
+          {isRegister && <p className="subtitle">Students can register with a campus email. Staff accounts are created by a super admin.</p>}
+        </header>
 
-        {errorMsg && <div className="alert alert-error">{errorMsg}</div>}
-        {successMsg && <div className="alert alert-success">{successMsg}</div>}
+        {errorMsg && <div className="alert alert-error" role="alert">{errorMsg}</div>}
+        {successMsg && <div className="alert alert-success" role="status">{successMsg}</div>}
 
         <form onSubmit={handleSubmit}>
           {isRegister && (
             <div className="field">
-              <label>Full Name</label>
+              <label htmlFor="account-name">Full name</label>
               <input
+                id="account-name"
                 type="text"
+                autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Jane Doe"
                 required
                 disabled={loading}
               />
@@ -91,18 +88,16 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
           )}
 
           <div className="field">
-            <label>Campus Email / LDAP</label>
+            <label htmlFor="account-email">Campus email</label>
             <input
+              id="account-email"
               type="email"
+              autoComplete={isRegister ? 'email' : 'username'}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. student@campus.edu or admin@campus.edu"
               required
               disabled={loading}
             />
-            <span className="field-hint">
-              Students self-register with LDAP/campus email. Staff roles are provisioned by Super Admin.
-            </span>
           </div>
 
           <PasswordField label="Password" value={password} onChange={(e) => setPassword(e.target.value)}
@@ -111,13 +106,13 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
             onChange={(e) => setConfirmation(e.target.value)} autoComplete="new-password" disabled={loading} />}
 
           <button type="submit" className="btn-submit" disabled={loading}>
-            {loading ? 'Processing...' : isRegister ? 'Register Account' : 'Sign In'}
+            {loading ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
           </button>
         </form>
 
         <div className="auth-footer">
           <p className="toggle-msg">
-            {isRegister ? 'Already registered?' : 'Need an account?'}
+            {isRegister ? 'Already registered?' : 'New student?'}{' '}
             <button
               type="button"
               className="btn-toggle"
@@ -128,11 +123,11 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
               }}
               disabled={loading}
             >
-              {isRegister ? 'Sign In here' : 'Register now'}
+              {isRegister ? 'Sign in' : 'Create an account'}
             </button>
           </p>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

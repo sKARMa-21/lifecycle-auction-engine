@@ -25,7 +25,7 @@ export default function NotificationsPage({ user, onLogout }: { user: User; onLo
 
   return (
     <div className="page-wide">
-      <PageHeader badge="Inbox" title="Notifications" role={user.role} onLogout={onLogout} links={[{ to: '/dashboard', label: 'Dashboard' }]} />
+      <PageHeader title="Notifications" role={user.role} onLogout={onLogout} />
       {error && <div className="alert alert-error">{error}</div>}
       <div className="card-wide">
         {notifications.length === 0 ? <p className="subtitle">You have no notifications.</p> : (
