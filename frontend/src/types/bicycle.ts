@@ -11,6 +11,7 @@ export interface Bicycle {
   found_location?: string | null
   status: CycleState | string
   owner_id?: number | null
+  current_owner_id?: number | null
   reported_by_id?: number | null
   asset_tagged_at?: string | null
   qr_token?: string | null

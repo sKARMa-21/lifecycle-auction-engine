@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import PasswordField from '../components/PasswordField'
 import type { User } from '../types/user'
 
 interface AuthPageProps {
@@ -11,6 +12,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
@@ -20,10 +22,14 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
     e.preventDefault()
     setErrorMsg('')
     setSuccessMsg('')
+    if (isRegister && password !== confirmation) {
+      setErrorMsg('Passwords must match.')
+      return
+    }
     setLoading(true)
 
     const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login'
-    const body = isRegister ? { full_name: name, email, password } : { email, password }
+    const body = isRegister ? { full_name: name, email, password, password_confirmation: confirmation } : { email, password }
 
     try {
       const res = await fetch(`http://127.0.0.1:8000${endpoint}`, {
@@ -38,12 +44,13 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
           setSuccessMsg('Account registered successfully! You can now sign in.')
           setIsRegister(false)
           setPassword('')
+          setConfirmation('')
         } else {
           onLogin(data.user, data.access_token)
           navigate('/dashboard')
         }
       } else {
-        setErrorMsg(data.detail || 'Authentication failed. Please check your credentials.')
+        setErrorMsg(typeof data.detail === 'string' ? data.detail : 'Authentication failed. Check the form and try again.')
       }
     } catch {
       setErrorMsg('Cannot reach backend server. Please verify the FastAPI backend is running.')
@@ -98,17 +105,10 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
             </span>
           </div>
 
-          <div className="field">
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              disabled={loading}
-            />
-          </div>
+          <PasswordField label="Password" value={password} onChange={(e) => setPassword(e.target.value)}
+            autoComplete={isRegister ? 'new-password' : 'current-password'} disabled={loading} />
+          {isRegister && <PasswordField label="Confirm password" value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)} autoComplete="new-password" disabled={loading} />}
 
           <button type="submit" className="btn-submit" disabled={loading}>
             {loading ? 'Processing...' : isRegister ? 'Register Account' : 'Sign In'}

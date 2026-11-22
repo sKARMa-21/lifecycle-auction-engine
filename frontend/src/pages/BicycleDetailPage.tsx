@@ -3,7 +3,7 @@ import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import type { Bicycle } from '../types/bicycle'
-import type { User } from '../types/user'
+import type { StudentSummary, User } from '../types/user'
 import LifecycleTimeline from '../components/LifecycleTimeline'
 
 const API = 'http://127.0.0.1:8000/api/v1'
@@ -18,7 +18,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
   const navigate = useNavigate()
 
   const [bicycle, setBicycle] = useState<Bicycle | null>(null)
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<StudentSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -65,7 +65,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
       setLoading(true)
       const [resB, resU] = await Promise.all([
         apiFetch(`${API}/bicycles/${id}`),
-        apiFetch(`${API}/auth/users`),
+        user.role === 'student' ? Promise.resolve(null) : apiFetch(`${API}/auth/students`),
       ])
 
       if (!resB.ok) {
@@ -73,7 +73,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
       }
 
       const bData = await resB.json()
-      const uData = await resU.json()
+      const uData = resU ? await resU.json() : []
 
       setBicycle(bData)
       setUsers(Array.isArray(uData) ? uData : [])
@@ -93,7 +93,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     } finally {
       setLoading(false)
     }
-  }, [id])
+  }, [id, user.role])
 
   useEffect(() => {
     fetchBicycle()
@@ -325,8 +325,9 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     )
   }
 
-  const owner = users.find((u) => u.id === bicycle.owner_id)
-  const isOwner = user.id === bicycle.owner_id
+  const ownerId = bicycle.current_owner_id ?? bicycle.owner_id
+  const isOwner = user.id === ownerId
+  const owner = isOwner ? user : users.find((u) => u.id === ownerId)
   const isAdmin = user.role === 'admin' || user.role === 'super_admin'
   const isGuard = user.role === 'guard'
   const isStudent = user.role === 'student'
@@ -379,7 +380,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
           <div>
             <h3>Lifecycle State Tracking</h3>
             <p className="subtitle">
-              Engine rule validations: Active degree protection, 30-day grace period, and verified ownership.
+              Lifecycle tracking includes the 15-day claim period and ownership history.
             </p>
           </div>
           <div>
@@ -431,16 +432,10 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
           {owner ? (
             <div className="owner-card">
               <div className="owner-title">{owner.full_name}</div>
-              <div className="owner-email">{owner.email} ({owner.role})</div>
-              {owner.degree_type && (
-                <div className="owner-degree">
-                  Enrolled: {owner.degree_type} ({owner.enrollment_year || 'N/A'} - Duration: {owner.degree_duration_years || 'N/A'} yrs)
-                </div>
-              )}
               {isOwner && <span className="tag-you">You are the registered owner</span>}
             </div>
           ) : (
-            <p className="subtitle">No registered owner linked (Unclaimed/Found Asset).</p>
+            <p className="subtitle">{ownerId ? 'Owner details are unavailable.' : 'No registered owner linked.'}</p>
           )}
         </div>
 

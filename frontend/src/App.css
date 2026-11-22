@@ -1067,3 +1067,14 @@ body {
 .btn-fill-min:hover {
   background: #E2E8F0;
 }
+
+.password-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.password-field input {
+  flex: 1;
+  min-width: 0;
+}

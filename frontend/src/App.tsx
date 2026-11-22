@@ -1,6 +1,8 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AuthPage from './pages/AuthPage'
+import ProfilePage from './pages/ProfilePage'
+import RegistrationsPage from './pages/RegistrationsPage'
 import Dashboard from './pages/Dashboard'
 import BicyclesPage from './pages/BicyclesPage'
 import BicycleDetailPage from './pages/BicycleDetailPage'
@@ -9,18 +11,56 @@ import AuctionsPage from './pages/AuctionsPage'
 import LaunchAuctionPage from './LaunchAuctionPage'
 import type { User } from './types/user'
 import { authStorage } from './lib/authStorage'
+import { apiData } from './lib/api'
 import './App.css'
 
 export default function App() {
   const user = useSyncExternalStore(authStorage.subscribe, authStorage.getUser)
 
+  const token = authStorage.getToken()
+  const [verifiedToken, setVerifiedToken] = useState<string | null>(null)
+  const [sessionError, setSessionError] = useState(false)
+  const [retry, setRetry] = useState(0)
+
+  useEffect(() => {
+    if (!token) return
+    const controller = new AbortController()
+    apiData<User>('/auth/me', { signal: controller.signal }).then((currentUser) => {
+      if (!controller.signal.aborted && authStorage.getToken() === token) {
+        authStorage.setSession(currentUser, token)
+        setVerifiedToken(token)
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted && authStorage.getToken() === token) setSessionError(true)
+    })
+    return () => controller.abort()
+  }, [token, retry])
+
   const handleLogin = (u: User, token: string) => {
+    setSessionError(false)
     authStorage.setSession(u, token)
   }
 
   const handleLogout = () => {
     authStorage.clearUser()
+    setVerifiedToken(null)
+    setSessionError(false)
   }
+
+  if (user && token && verifiedToken !== token) return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <p role="status">{sessionError ? 'Could not verify your session.' : 'Checking your session…'}</p>
+        {sessionError && <button className="btn-link" onClick={() => { setSessionError(false); setRetry(retry + 1) }}>Retry</button>}
+        <button className="btn-link" onClick={handleLogout}>Sign out</button>
+      </div>
+    </div>
+  )
+  if (user?.role === 'student' && !user.profile_complete && token) return (
+    <ProfilePage user={user} onLogout={handleLogout} onSave={(updated) => {
+      if (authStorage.getToken() === token) authStorage.setSession(updated, token)
+    }} />
+  )
 
   return (
     <BrowserRouter>
@@ -37,6 +77,9 @@ export default function App() {
           path="/bicycles"
           element={user ? <BicyclesPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}
         />
+        <Route path="/bicycles/registrations" element={
+          user && user.role !== 'guard' ? <RegistrationsPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />
+        } />
         <Route
           path="/bicycles/:id"
           element={user ? <BicycleDetailPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}

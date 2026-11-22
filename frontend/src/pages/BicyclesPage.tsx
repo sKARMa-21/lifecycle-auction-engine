@@ -2,7 +2,7 @@ import { apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import type { User } from '../types/user'
+import type { StudentSummary, User } from '../types/user'
 import type { Bicycle } from '../types/bicycle'
 
 const API = 'http://127.0.0.1:8000/api/v1'
@@ -14,7 +14,7 @@ interface BicyclesPageProps {
 
 export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
   const [bicycles, setBicycles] = useState<Bicycle[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<StudentSummary[]>([])
   const [form, setForm] = useState({
     asset_tag: '',
     brand: '',
@@ -29,22 +29,23 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
 
   const isStudent = user.role === 'student'
   const isAuthority = user.role === 'admin' || user.role === 'super_admin'
-  const studentUsers = users.filter((u) => u.role === 'student')
+  const studentUsers = users
 
   const load = useCallback(async () => {
     try {
       setLoading(true)
       const [bRes, uRes] = await Promise.all([
         apiFetch(`${API}/bicycles/`),
-        apiFetch(`${API}/auth/users`),
+        isStudent ? Promise.resolve(null) : apiFetch(`${API}/auth/students`),
       ])
+      if (!bRes.ok) throw new Error('Could not load bicycles')
       const b = await bRes.json()
-      const u = await uRes.json()
+      const u = uRes ? await uRes.json() : []
       
       const loadedBikes: Bicycle[] = Array.isArray(b) ? b : []
       // If student, strictly guarantee only own bicycles are displayed
       const filteredBikes = isStudent
-        ? loadedBikes.filter((bike) => bike.owner_id === user.id)
+        ? loadedBikes.filter((bike) => (bike.current_owner_id ?? bike.owner_id) === user.id)
         : loadedBikes
 
       setBicycles(filteredBikes)
@@ -64,8 +65,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     e.preventDefault()
     setMsg(null)
     
-    // Students can only register bicycles under their own user account
-    const assignedOwnerId = isStudent ? user.id : (form.owner_id ? Number(form.owner_id) : null)
+    const assignedOwnerId = form.owner_id ? Number(form.owner_id) : null
 
     const payload = {
       asset_tag: form.asset_tag,
@@ -151,6 +151,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
         links={[
           { to: '/auctions', label: 'Auctions' },
           { to: '/dashboard', label: 'Dashboard' },
+          { to: '/bicycles/registrations', label: isStudent ? 'Register New Cycle' : 'Review Registrations', visible: isStudent || isAuthority },
         ]}
       />
 
@@ -161,12 +162,10 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
       )}
 
       {/* Add / Edit Bicycle Form */}
-      <div className="card-wide">
-        <h3>{editingId ? `Edit Bicycle #${editingId}` : (isStudent ? 'Register My Bicycle' : 'Register New Campus Bicycle')}</h3>
+      {!isStudent && <div className="card-wide">
+        <h3>{editingId ? `Edit Bicycle #${editingId}` : 'Register New Campus Bicycle'}</h3>
         <p className="subtitle">
-          {isStudent
-            ? 'Add your bicycle to the campus database. It will be protected under your active degree program.'
-            : 'Guards and Admins cannot own bicycles. You may register found/campus fleet assets or assign them to enrolled students.'}
+          Register a found or campus fleet bicycle.
         </p>
         <form onSubmit={save} className="form-inline">
           <input
@@ -196,23 +195,13 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
             onChange={(e) => setForm({ ...form, found_location: e.target.value })}
           />
 
-          {/* Non-students can pick an enrolled student as owner, or leave unowned */}
-          {!isStudent && (
-            <select
-              value={form.owner_id}
-              onChange={(e) => setForm({ ...form, owner_id: e.target.value })}
-            >
-              <option value="">No Owner (Found / Impounded Asset)</option>
-              {studentUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.full_name} ({u.email})
-                </option>
-              ))}
-            </select>
-          )}
+          <select value={form.owner_id} onChange={(e) => setForm({ ...form, owner_id: e.target.value })}>
+            <option value="">No Owner (Found / Impounded Asset)</option>
+            {studentUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+          </select>
 
           <button type="submit" className="btn-submit btn-sm">
-            {editingId ? 'Save Changes' : (isStudent ? '+ Register My Bicycle' : '+ Register Bicycle')}
+            {editingId ? 'Save Changes' : '+ Register Bicycle'}
           </button>
           {editingId && (
             <button
@@ -227,7 +216,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
             </button>
           )}
         </form>
-      </div>
+      </div>}
 
       {/* Inventory & Lifecycle Table */}
       <div className="card-wide">
@@ -268,15 +257,15 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
                   <tr>
                     <td colSpan={7} style={{ textAlign: 'center', padding: '32px' }}>
                       {isStudent
-                        ? 'You have not registered any bicycles yet. Use the form above to register your cycle.'
+                        ? 'You have not registered any bicycles yet. Use Register New Cycle to submit a request.'
                         : 'No bicycles registered yet.'}
                     </td>
                   </tr>
                 ) : (
                   bicycles.map((b) => {
                     const isOwner = b.owner_id === user.id
-                    const canTransfer = isAuthority || isOwner
-                    const ownerUser = users.find((u) => u.id === b.owner_id)
+                    const canTransfer = isAuthority
+                    const ownerUser = isOwner ? user : users.find((u) => u.id === b.owner_id)
 
                     return (
                       <tr key={b.id}>
@@ -317,7 +306,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
                           </Link>
                         </td>
                         <td>
-                          {(isOwner || isAuthority) ? (
+                          {isAuthority ? (
                             <>
                               <button
                                 type="button"
