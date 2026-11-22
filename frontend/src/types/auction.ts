@@ -1,4 +1,4 @@
-export type AuctionStatus = 'active' | 'extended' | 'ended' | 'cancelled'
+export type AuctionStatus = 'draft' | 'scheduled' | 'active' | 'extended' | 'ended' | 'settled' | 'cancelled'
 
 export interface Bid {
   id: number
@@ -17,6 +17,7 @@ export interface Auction {
   current_highest_bid: number
   current_winner_id?: number | null
   min_bid_increment: number
+  starts_at: string
   ends_at: string
   status: AuctionStatus
   created_at: string

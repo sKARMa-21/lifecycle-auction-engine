@@ -4,6 +4,7 @@ import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
 import BicyclesPage from './pages/BicyclesPage'
 import BicycleDetailPage from './pages/BicycleDetailPage'
+import AuctionPoolPage from './pages/AuctionPoolPage'
 import AuctionsPage from './pages/AuctionsPage'
 import LaunchAuctionPage from './LaunchAuctionPage'
 import type { User } from './types/user'
@@ -44,6 +45,7 @@ export default function App() {
           path="/auctions"
           element={user ? <AuctionsPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}
         />
+        <Route path="/auctions/:id" element={user ? <AuctionPoolPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />} />
         <Route
           path="/launch-auction"
           element={user ? <LaunchAuctionPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}

@@ -1,20 +1,13 @@
 import { apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
-import AuctionCountdownTimer from '../components/AuctionCountdownTimer'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { isAuctionLive } from '../lib/auction'
 import type { Auction, AuctionBidEvent } from '../types/auction'
 import type { User } from '../types/user'
 import { useAuctionSubscriptions } from '../lib/useAuctionWebSocket'
 
 const API = 'http://127.0.0.1:8000/api/v1'
-
-interface LiveBidItem {
-  bidderId: number
-  amount: number
-  time: string
-  extended: boolean
-}
 
 interface AuctionsPageProps {
   user: User
@@ -22,17 +15,16 @@ interface AuctionsPageProps {
 }
 
 export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
+  const navigate = useNavigate()
   const [auctions, setAuctions] = useState<Auction[]>([])
   const [loading, setLoading] = useState(true)
-  const [bidAmounts, setBidAmounts] = useState<Record<number, string>>({})
-  const [biddingId, setBiddingId] = useState<number | null>(null)
+  const [now, setNow] = useState(Date.now())
   const [msg, setMsg] = useState<{ text: string; isError: boolean } | null>(null)
-  const [liveFeeds, setLiveFeeds] = useState<Record<number, LiveBidItem[]>>({})
   const [outbidNotice, setOutbidNotice] = useState<string | null>(null)
 
   const activeAuctionIds = useMemo(
-    () => auctions.filter((a) => a.status === 'active' || a.status === 'extended').map((a) => a.id),
-    [auctions]
+    () => auctions.filter((a) => isAuctionLive(a, now)).map((a) => a.id),
+    [auctions, now]
   )
 
   const handleLiveBid = useCallback((auctionId: number, event: AuctionBidEvent) => {
@@ -53,19 +45,6 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
       })
     })
 
-    setLiveFeeds((prev) => {
-      const existing = prev[auctionId] || []
-      const item: LiveBidItem = {
-        bidderId: event.bidder_id,
-        amount: event.amount,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        extended: event.extended,
-      }
-      return {
-        ...prev,
-        [auctionId]: [item, ...existing.slice(0, 3)],
-      }
-    })
   }, [user.id])
 
   useAuctionSubscriptions(activeAuctionIds, handleLiveBid)
@@ -78,20 +57,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
         const data = await res.json()
         const list = Array.isArray(data) ? data : []
         setAuctions(list)
-        setLiveFeeds((prev) => {
-          const updated = { ...prev }
-          list.forEach((auc: Auction) => {
-            if (auc.bids && auc.bids.length > 0 && !updated[auc.id]) {
-              updated[auc.id] = auc.bids.slice(0, 4).map((b) => ({
-                bidderId: b.bidder_id,
-                amount: b.amount,
-                time: new Date(b.placed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                extended: false,
-              }))
-            }
-          })
-          return updated
-        })
+
       }
     } catch {
       setMsg({ text: 'Unable to connect to auction server.', isError: true })
@@ -106,63 +72,10 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
     return () => clearInterval(timer)
   }, [loadAuctions])
 
-  const handlePlaceBid = async (auction: Auction) => {
-    if (user.role !== 'student') {
-      setMsg({
-        text: 'Only enrolled students can place bids in cycle auctions. Staff and Admins cannot own or bid on cycles.',
-        isError: true,
-      })
-      return
-    }
-
-    const rawVal = bidAmounts[auction.id]
-    const amount = Number(rawVal)
-    const minRequired =
-      auction.current_winner_id !== null && auction.current_winner_id !== undefined
-        ? auction.current_highest_bid + auction.min_bid_increment
-        : auction.starting_price
-
-    if (!amount || amount < minRequired) {
-      setMsg({
-        text: `Bid must be at least ₹${minRequired} (Min increment: ₹${auction.min_bid_increment})`,
-        isError: true,
-      })
-      return
-    }
-
-    setBiddingId(auction.id)
-    setMsg(null)
-
-    try {
-      // Joining is idempotent and required by the bidding endpoint.
-      const joined = await apiFetch(`${API}/auctions/${auction.id}/participants`, { method: 'POST' })
-      if (!joined.ok) {
-        const error = await joined.json()
-        setMsg({ text: error.detail || 'Could not join auction.', isError: true })
-        return
-      }
-      const res = await apiFetch(`${API}/auctions/${auction.id}/bids`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: amount,
-        }),
-      })
-
-      const data = await res.json()
-      if (res.ok) {
-        setMsg({ text: `Success! Placed leading bid of ₹${amount}.`, isError: false })
-        setBidAmounts((prev) => ({ ...prev, [auction.id]: '' }))
-        loadAuctions()
-      } else {
-        setMsg({ text: data.detail || 'Could not place bid.', isError: true })
-      }
-    } catch {
-      setMsg({ text: 'Error placing bid. Server might be offline.', isError: true })
-    } finally {
-      setBiddingId(null)
-    }
-  }
+  useEffect(() => {
+    const clock = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(clock)
+  }, [])
 
   return (
     <div className="page-wide">
@@ -233,123 +146,51 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
         ) : (
           <div className="auction-grid">
             {auctions.map((auction) => {
-              const endsDate = new Date(auction.ends_at)
               const isExtended = auction.status === 'extended'
               const isWinner = auction.current_winner_id === user.id
-              const isEnded = auction.status === 'ended' || auction.status === 'cancelled' || new Date(auction.ends_at).getTime() <= Date.now()
-              const minRequired =
-                auction.current_winner_id !== null && auction.current_winner_id !== undefined
-                  ? auction.current_highest_bid + auction.min_bid_increment
-                  : auction.starting_price
+              const live = isAuctionLive(auction, now)
+              const upcoming = auction.status === 'scheduled' && new Date(auction.starts_at).getTime() > now
 
               return (
-                <div key={auction.id} className={`auction-card-box ${isWinner ? 'auction-card-leading' : ''}`}>
+                <div key={auction.id} className={`auction-card-box ${isWinner ? 'auction-card-leading' : ''}`}
+                  style={{ cursor: isAuctionLive(auction) ? 'pointer' : undefined }}
+                  onClick={(event) => {
+                    if (isAuctionLive(auction) && !(event.target as HTMLElement).closest('a, button, input')) {
+                      navigate(`/auctions/${auction.id}`)
+                    }
+                  }}>
                   <div className="auction-top">
-                    <h4>{auction.title}</h4>
+                    <h4>{isAuctionLive(auction) ? (
+                      <Link to={`/auctions/${auction.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>{auction.title}</Link>
+                    ) : auction.title}</h4>
                     <span className={`status-badge status-${auction.status}`}>
-                      {isExtended ? 'EXTENDED' : auction.status.toUpperCase()}
+                      {live ? (isExtended ? 'EXTENDED' : 'LIVE') : upcoming ? 'SCHEDULED' : 'CLOSED'}
                     </span>
                   </div>
 
                   <div className="auction-pricing">
                     <div className="price-item">
-                      <span className="price-label">Current Bid</span>
+                      <span className="price-label">{auction.current_winner_id == null ? 'Starting price' : 'Highest bid'}</span>
                       <span className="price-val">₹{auction.current_highest_bid}</span>
                     </div>
-                    <div className="price-item">
-                      <span className="price-label">Min Next Bid</span>
-                      <span className="price-val">₹{minRequired}</span>
-                    </div>
                   </div>
 
                   <div className="auction-info-row">
-                    <span>Time Left:</span>
-                    <AuctionCountdownTimer
-                      endsAt={auction.ends_at}
-                      isExtended={isExtended}
-                      onExpire={() => {
-                        setAuctions((prev) =>
-                          prev.map((a) => (a.id === auction.id ? { ...a, status: 'ended' } : a))
-                        )
-                      }}
-                    />
-                  </div>
-
-                  <div className="auction-info-row">
-                    <span>Deadline:</span>
-                    <strong>{endsDate.toLocaleString()}</strong>
-                  </div>
-
-                  {isWinner && (
-                    <div className="winner-tag">
-                      You currently hold the highest bid.
-                    </div>
-                  )}
-
-                  <div className="auction-live-feed">
-                    <span className="feed-title">Live Bid Feed</span>
-                    {(!liveFeeds[auction.id] || liveFeeds[auction.id].length === 0) ? (
-                      <span className="feed-empty">No live bids yet</span>
-                    ) : (
-                      <ul className="feed-list">
-                        {liveFeeds[auction.id].map((item, idx) => (
-                          <li key={idx} className="feed-item">
-                            <span>Bidder #{item.bidderId}: <strong>₹{item.amount}</strong></span>
-                            <span className="feed-time">{item.time}</span>
-                            {item.extended && <span className="feed-tag">+5m</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    <span>{upcoming ? 'Starts' : live ? 'Ends' : 'Ended'}</span>
+                    <strong>{new Date(upcoming ? auction.starts_at : auction.ends_at).toLocaleString([], {
+                      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                    })}</strong>
                   </div>
 
                   <div className="auction-actions">
-                    <Link
-                      to={`/bicycles/${auction.bicycle_id}`}
-                      className="btn-toggle"
-                      style={{ fontSize: '0.82rem' }}
-                    >
-                      Inspect Cycle #{auction.bicycle_id}
-                    </Link>
-
-                    {isEnded ? (
-                      <div className="auction-ended-text">
-                        Bidding Closed ({auction.status.toUpperCase()})
-                      </div>
-                    ) : user.role === 'student' ? (
-                      <div className="bid-inline-form">
-                        <button
-                          type="button"
-                          className="btn-fill-min"
-                          onClick={() =>
-                            setBidAmounts((prev) => ({ ...prev, [auction.id]: String(minRequired) }))
-                          }
-                          title={`Auto-fill min ₹${minRequired}`}
-                        >
-                          ₹{minRequired}
-                        </button>
-                        <input
-                          type="number"
-                          placeholder={`Min ₹${minRequired}`}
-                          value={bidAmounts[auction.id] || ''}
-                          onChange={(e) =>
-                            setBidAmounts({ ...bidAmounts, [auction.id]: e.target.value })
-                          }
-                          disabled={biddingId === auction.id}
-                        />
-                        <button
-                          type="button"
-                          className="btn-submit btn-sm"
-                          onClick={() => handlePlaceBid(auction)}
-                          disabled={biddingId === auction.id}
-                        >
-                          {biddingId === auction.id ? 'Bidding...' : 'Bid'}
-                        </button>
-                      </div>
+                    {live ? (
+                      <Link to={`/auctions/${auction.id}`} className="btn-submit btn-sm" style={{ width: 'auto', textAlign: 'center', textDecoration: 'none' }}>
+                        Enter auction pool
+                      </Link>
                     ) : (
-                      <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', alignSelf: 'center' }}>
-                        Bidding reserved for students
-                      </span>
+                      <button type="button" className="btn-toggle" disabled>
+                        {upcoming ? 'Not started yet' : 'Bidding closed'}
+                      </button>
                     )}
                   </div>
                 </div>
