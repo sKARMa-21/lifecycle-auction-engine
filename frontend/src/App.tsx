@@ -9,6 +9,8 @@ import BicycleDetailPage from './pages/BicycleDetailPage'
 import AuctionPoolPage from './pages/AuctionPoolPage'
 import AuctionsPage from './pages/AuctionsPage'
 import LaunchAuctionPage from './LaunchAuctionPage'
+import NotificationsPage from './pages/NotificationsPage'
+import RequestsPage from './pages/RequestsPage'
 import type { User } from './types/user'
 import { authStorage } from './lib/authStorage'
 import { apiData } from './lib/api'
@@ -62,6 +64,8 @@ export default function App() {
     }} />
   )
 
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+
   return (
     <BrowserRouter>
       <Routes>
@@ -91,7 +95,15 @@ export default function App() {
         <Route path="/auctions/:id" element={user ? <AuctionPoolPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />} />
         <Route
           path="/launch-auction"
-          element={user ? <LaunchAuctionPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}
+          element={user && isAdmin ? <LaunchAuctionPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="/notifications"
+          element={user ? <NotificationsPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="/requests"
+          element={user && user.role !== 'guard' ? <RequestsPage user={user} onLogout={handleLogout} /> : <Navigate to="/" replace />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

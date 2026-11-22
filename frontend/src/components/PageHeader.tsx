@@ -9,6 +9,10 @@ interface PageHeaderProps {
 }
 
 export default function PageHeader({ badge, title, role, links, onLogout }: PageHeaderProps) {
+  const sharedLinks = [
+    { to: '/requests', label: role === 'student' ? 'My Auctions' : 'Auction Requests', visible: role !== 'guard' },
+    { to: '/notifications', label: 'Notifications' },
+  ]
   return (
     <header className="bar">
       <div>
@@ -17,7 +21,7 @@ export default function PageHeader({ badge, title, role, links, onLogout }: Page
       </div>
       <div className="bar-actions">
         <span className="role-pill">{role}</span>
-        {links.filter(link => link.visible !== false).map(link => (
+        {[...links, ...sharedLinks].filter(link => link.visible !== false).map(link => (
           <Link key={link.to} to={link.to} className="btn-toggle">
             {link.label}
           </Link>
