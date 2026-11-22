@@ -2,137 +2,96 @@ from datetime import datetime, timedelta, timezone
 from typing import List
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from app.models.auction import Auction, Bid, AuctionStatus
+from app.models.auction import Auction, AuctionParticipant, Bid, AuctionStatus
 from app.models.bicycle import Bicycle, CycleState
 from app.models.user import User, UserRole
-from app.schemas.auction import AuctionCreate, BidCreate
+from app.schemas.auction import AuctionCreate, AuctionUpdate, BidCreate
+from app.services.hostel import bike_hostel, can_manage
 from app.services.lifecycle_service import BicycleLifecycleService
+from app.services.notifications import notify
 from app.core.redis import publish_auction_event
+
+
+OPEN = (AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED)
+
+
+def _window(starts_at: datetime, ends_at: datetime) -> tuple:
+    """Return the auction window in UTC, rejecting a past start or an end before the start."""
+    starts_at, ends_at = (d if d.tzinfo else d.replace(tzinfo=timezone.utc) for d in (starts_at, ends_at))
+    if starts_at < datetime.now(timezone.utc) or ends_at <= starts_at:
+        raise HTTPException(status_code=400, detail="Choose a future start time and an end time after it.")
+    return starts_at, ends_at
 
 
 class AuctionService:
     @staticmethod
     def create_auction(db: Session, data: AuctionCreate) -> Auction:
-        # 1. Verify bicycle exists
-        bicycle = db.get(Bicycle, data.bicycle_id)
+        bicycle = db.query(Bicycle).filter(Bicycle.id == data.bicycle_id).with_for_update().first()
         if not bicycle:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Bicycle with ID {data.bicycle_id} not found.",
-            )
-
-        # Serialize setup for the same bicycle, including duplicate-auction checks.
-        bicycle = db.query(Bicycle).filter(Bicycle.id == data.bicycle_id).with_for_update().one()
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Bicycle with ID {data.bicycle_id} not found.")
         creator = db.get(User, data.created_by_id)
         if not creator:
             raise HTTPException(status_code=404, detail="User not found")
-        owner_id = bicycle.current_owner_id or bicycle.owner_id
-        is_student_owner = creator.role == UserRole.STUDENT and owner_id == creator.id
-        is_admin_creator = creator.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
-        if bicycle.status == "active" and not (is_student_owner or (is_admin_creator and owner_id is None)):
-            raise HTTPException(status_code=403, detail="Administrators cannot auction a bicycle currently in use by its owner.")
-        if creator.role == UserRole.GUARD or (not is_student_owner and not is_admin_creator):
-            raise HTTPException(status_code=403, detail="Only the student owner or an administrator can create an auction.")
-
-        # An owner's voluntary sale and an unowned campus asset can be configured directly.
-        if bicycle.status == "active":
-            BicycleLifecycleService.mark_as_auctionable_by_owner(bicycle, creator, db=db)
-        elif bicycle.status == "dead" and is_admin_creator and owner_id is None:
-            bicycle.status = "auctionable"
-            bicycle.current_state = CycleState.AUCTIONABLE
-            BicycleLifecycleService._record_event(bicycle, CycleState.DEAD, CycleState.AUCTIONABLE,
-                                                  actor_id=creator.id, notes="Unowned scrap offered for auction", db=db)
-        elif bicycle.status == "asset" and is_admin_creator:
-            BicycleLifecycleService.promote_asset_to_auctionable(bicycle, actor=creator, db=db)
-
-        # 2. Gate by lifecycle state machine: cycle must be AUCTIONABLE
-        is_auctionable = (
-            bicycle.current_state == CycleState.AUCTIONABLE
-            or bicycle.status == CycleState.AUCTIONABLE.value
-        )
-        if not is_auctionable:
-            curr_status = bicycle.status or (bicycle.current_state.value if bicycle.current_state else "unknown")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Cannot launch auction: Bicycle #{bicycle.id} is currently in '{curr_status}' state. "
-                    f"Only bicycles in '{CycleState.AUCTIONABLE.value}' state can be put up for auction."
-                ),
-            )
-
-        # 3. Verify creator exists and has authority (cycle owner or admin)
-        creator = db.get(User, data.created_by_id)
-        if not creator:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with ID {data.created_by_id} not found.",
-            )
-
-        is_admin = creator.role in (UserRole.ADMIN, "admin", UserRole.SUPER_ADMIN, "super_admin")
-        is_owner = (
-            (bicycle.owner_id is not None and bicycle.owner_id == creator.id)
-            or (bicycle.current_owner_id is not None and bicycle.current_owner_id == creator.id)
-        )
-        if not (is_admin or is_owner):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the registered bicycle owner or an administrator can launch an auction for this bicycle.",
-            )
-
-        # 4. Check for active/ongoing auctions for this bicycle
-        existing_auction = (
-            db.query(Auction)
-            .filter(
-                Auction.bicycle_id == data.bicycle_id,
-                Auction.status.in_([AuctionStatus.ACTIVE, AuctionStatus.EXTENDED, AuctionStatus.SCHEDULED]),
-            )
-            .first()
-        )
-        if existing_auction:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"An active auction (#{existing_auction.id}) already exists for bicycle #{data.bicycle_id}.",
-            )
-
-        # 5. Validate end time is in the future
-        now = datetime.now(timezone.utc)
-        ends_at = data.ends_at
-        if ends_at.tzinfo is None:
-            ends_at = ends_at.replace(tzinfo=timezone.utc)
-
-        if ends_at <= now:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Auction end date must be in the future.",
-            )
-
-        starts_at = data.starts_at
-        if starts_at.tzinfo is None:
-            starts_at = starts_at.replace(tzinfo=timezone.utc)
-        if starts_at < now or ends_at <= starts_at:
-            raise HTTPException(status_code=400, detail="Choose a future start time and an end time after it.")
-
-        auction = Auction(
-            bicycle_id=data.bicycle_id,
-            created_by_id=data.created_by_id,
-            title=data.title,
-            starting_price=data.starting_price,
-            current_highest_bid=data.starting_price,
-            min_bid_increment=data.min_bid_increment,
-            starts_at=starts_at,
-            ends_at=ends_at,
-            anti_snipe_trigger_window=data.anti_snipe_trigger_window,
-            anti_snipe_extension_minutes=data.anti_snipe_extension_minutes,
-            status=AuctionStatus.SCHEDULED,
-        )
+        if bicycle.status != CycleState.AUCTIONABLE.value:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=(
+                f"Cannot launch auction: Bicycle #{bicycle.id} is currently in '{bicycle.status}' state. "
+                f"Only bicycles in '{CycleState.AUCTIONABLE.value}' state can be put up for auction."))
+        if not can_manage(creator, bike_hostel(db, bicycle)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Only this hostel's admin or a super admin can launch an auction for this bicycle.")
+        existing = db.query(Auction).filter(Auction.bicycle_id == bicycle.id, Auction.status.in_(OPEN)).first()
+        if existing:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"An active auction (#{existing.id}) already exists for bicycle #{bicycle.id}.")
+        starts_at, ends_at = _window(data.starts_at, data.ends_at)
+        auction = Auction(**data.model_dump(exclude={"starts_at", "ends_at"}), current_highest_bid=data.starting_price,
+                          starts_at=starts_at, ends_at=ends_at, status=AuctionStatus.SCHEDULED)
         db.add(auction)
         db.commit()
         db.refresh(auction)
         return auction
 
     @staticmethod
+    def _lock_managed_auction(db: Session, auction_id: int, actor: User) -> Auction:
+        auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
+        if not auction:
+            raise HTTPException(status_code=404, detail="Auction not found")
+        if not can_manage(actor, bike_hostel(db, db.get(Bicycle, auction.bicycle_id))):
+            raise HTTPException(status_code=403, detail="Only this hostel's admin or a super admin can manage this auction.")
+        return auction
+
+    @staticmethod
+    def update_auction(db: Session, auction_id: int, data: AuctionUpdate, actor: User) -> Auction:
+        """Edit a scheduled auction before bidding opens (so it has no bids yet)."""
+        auction = AuctionService._lock_managed_auction(db, auction_id, actor)
+        if auction.status != AuctionStatus.SCHEDULED or auction.starts_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Only scheduled auctions that have not started can be edited.")
+        changes = data.model_dump(exclude_unset=True, exclude_none=True)
+        changes["starts_at"], changes["ends_at"] = _window(changes.get("starts_at", auction.starts_at), changes.get("ends_at", auction.ends_at))
+        if "starting_price" in changes:
+            changes["current_highest_bid"] = changes["starting_price"]
+        for field, value in changes.items():
+            setattr(auction, field, value)
+        db.commit()
+        db.refresh(auction)
+        return auction
+
+    @staticmethod
+    def cancel_auction(db: Session, auction_id: int, actor: User) -> Auction:
+        """Super admin cancels a scheduled or live auction; the bicycle stays in the auction pool."""
+        auction = AuctionService._lock_managed_auction(db, auction_id, actor)
+        if auction.status not in OPEN:
+            raise HTTPException(status_code=400, detail=f"Only scheduled or live auctions can be cancelled (this one is {auction.status.value}).")
+        auction.status = AuctionStatus.CANCELLED
+        people = [b.bidder_id for b in db.query(Bid).filter(Bid.auction_id == auction.id)]
+        people += [p.user_id for p in db.query(AuctionParticipant).filter(AuctionParticipant.auction_id == auction.id)]
+        notify(db, people, f"The auction \"{auction.title}\" was cancelled by an administrator.", auction.bicycle_id)
+        db.commit()
+        db.refresh(auction)
+        return auction
+
+    @staticmethod
     def place_bid(db: Session, auction_id: int, bid_in: BidCreate, *, bidder_id: int) -> Bid:
-        # PESSIMISTIC LOCK: with_for_update prevents concurrent race conditions
         auction = (
             db.query(Auction)
             .filter(Auction.id == auction_id)
@@ -157,7 +116,6 @@ class AuctionService:
             db.commit()
             raise HTTPException(status_code=400, detail="Auction deadline has passed")
 
-        # Validate minimum bid threshold
         min_required_bid = (
             auction.current_highest_bid + auction.min_bid_increment
             if auction.current_winner_id is not None
@@ -170,7 +128,6 @@ class AuctionService:
                 detail=f"Bid amount too low. Minimum acceptable bid is {min_required_bid}"
             )
 
-        # Validate bidder exists and is strictly a student (Guards/Admins cannot own or bid on cycles)
         bidder = db.get(User, bidder_id)
         if not bidder:
             raise HTTPException(status_code=404, detail="Bidder not found")
@@ -183,7 +140,6 @@ class AuctionService:
         if auction.current_winner_id == bidder_id:
             raise HTTPException(status_code=400, detail="You are already the highest bidder")
 
-        # Mark previous highest bid as outbid
         if auction.current_winner_id is not None:
             prev_winning = (
                 db.query(Bid)
@@ -198,7 +154,6 @@ class AuctionService:
             if prev_winning:
                 prev_winning.status = "outbid"
 
-        # Create bid record
         new_bid = Bid(
             auction_id=auction.id,
             bidder_id=bidder_id,
@@ -208,12 +163,10 @@ class AuctionService:
         )
         db.add(new_bid)
 
-        # Update auction state
         auction.current_highest_bid = bid_in.amount
         auction.current_winner_id = bidder_id
 
         is_extended = False
-        # Anti-sniping dynamic extension
         time_left = ends_at - now
         threshold = timedelta(minutes=auction.anti_snipe_trigger_window)
         if time_left < threshold:
@@ -265,7 +218,6 @@ class AuctionService:
         - If no bids were placed: marks the auction CANCELLED and leaves the
           bicycle in AUCTIONABLE state so it can be re-listed.
         """
-        # Pessimistic lock to avoid concurrent double-settlement
         auction = (
             db.query(Auction)
             .filter(Auction.id == auction_id)
@@ -281,7 +233,6 @@ class AuctionService:
         if auction.status == AuctionStatus.CANCELLED:
             raise HTTPException(status_code=400, detail="Auction is already cancelled")
 
-        # Cannot settle an auction that's still live (or scheduled and not yet over)
         now = datetime.now(timezone.utc)
         ends_at = auction.ends_at
         if ends_at.tzinfo is None:
@@ -299,15 +250,12 @@ class AuctionService:
         if not bicycle:
             raise HTTPException(status_code=404, detail="Associated bicycle not found")
 
-        # --- No bids: cancel, leave bicycle auctionable for re-listing ---
         if auction.current_winner_id is None:
             auction.status = AuctionStatus.CANCELLED
             db.commit()
             db.refresh(auction)
             return auction
 
-        # --- Has a winner: settle ---
-        # 1. Update bid statuses: highest bid -> winning, rest -> outbid
         all_bids: List[Bid] = (
             db.query(Bid)
             .filter(Bid.auction_id == auction_id)
@@ -322,7 +270,6 @@ class AuctionService:
             else:
                 bid.status = "outbid"
 
-        # 2. Transition bicycle AUCTIONABLE -> SOLD via lifecycle service
         BicycleLifecycleService.mark_as_sold(
             bicycle=bicycle,
             sold_price=auction.current_highest_bid,
@@ -330,11 +277,9 @@ class AuctionService:
             db=db,
         )
 
-        # 3. Transfer bicycle ownership to winner
         bicycle.owner_id = auction.current_winner_id
         bicycle.current_owner_id = auction.current_winner_id
 
-        # 4. Set payment deadline (48 hours from settlement) and mark SETTLED
         auction.payment_deadline = now + timedelta(hours=48)
         auction.status = AuctionStatus.SETTLED
 

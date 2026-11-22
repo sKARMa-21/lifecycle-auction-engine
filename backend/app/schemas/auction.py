@@ -34,6 +34,18 @@ class AuctionCreate(BaseModel):
     anti_snipe_extension_minutes: int = 5
 
 
+class AuctionUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: Optional[str] = None
+    starting_price: Optional[float] = Field(default=None, ge=0)
+    min_bid_increment: Optional[float] = Field(default=None, gt=0)
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    anti_snipe_trigger_window: Optional[int] = None
+    anti_snipe_extension_minutes: Optional[int] = None
+
+
 class AuctionResponse(BaseModel):
     id: int
     bicycle_id: int

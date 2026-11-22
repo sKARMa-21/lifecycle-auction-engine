@@ -7,18 +7,33 @@ from app.models.auction import Auction, AuctionParticipant, AuctionStatus
 from app.models.bicycle import Bicycle
 from app.models.user import User, UserRole
 from sqlalchemy.orm import Session
-from app.db.session import get_db  # Adjust to your get_db dependency
-from app.schemas.auction import AuctionCreate, AuctionResponse, BidCreate, BidResponse, SettleResponse
+from app.db.session import get_db
+from app.schemas.auction import AuctionCreate, AuctionResponse, AuctionUpdate, BidCreate, BidResponse, SettleResponse
 from app.services.auction_service import AuctionService
 
 router = APIRouter(prefix="/auctions", tags=["Auctions"])
 
 
 @router.post("/", response_model=AuctionResponse, status_code=status.HTTP_201_CREATED)
-def create_auction(auction_in: AuctionCreate, db: Session = Depends(get_db), user: User = Depends(require_complete_profile)):
+def create_auction(auction_in: AuctionCreate, db: Session = Depends(get_db),
+                   user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
     if auction_in.created_by_id != user.id:
         raise HTTPException(403, "Creator must match the signed-in user")
     return AuctionService.create_auction(db, auction_in)
+
+
+@router.patch("/{auction_id}", response_model=AuctionResponse)
+def update_auction(auction_id: int, auction_in: AuctionUpdate, db: Session = Depends(get_db),
+                   user: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN))):
+    """Edit a scheduled auction before bidding opens (hostel admin or super admin)."""
+    return AuctionService.update_auction(db, auction_id, auction_in, user)
+
+
+@router.post("/{auction_id}/cancel", response_model=AuctionResponse)
+def cancel_auction(auction_id: int, db: Session = Depends(get_db),
+                   user: User = Depends(require_roles(UserRole.SUPER_ADMIN))):
+    """Cancel a scheduled or live auction (super admin); the bicycle returns to the auction pool."""
+    return AuctionService.cancel_auction(db, auction_id, user)
 
 
 @router.get("/", response_model=List[AuctionResponse])
@@ -33,7 +48,6 @@ def get_auction_details(auction_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{auction_id}/bids", response_model=BidResponse, status_code=status.HTTP_201_CREATED)
 def place_bid(auction_id: int, bid_in: BidCreate, db: Session = Depends(get_db), user: User = Depends(require_complete_profile)):
-    # Same transaction and lock as the existing engine; do not replace its algorithm.
     auction = db.query(Auction).filter_by(id=auction_id).with_for_update().first()
     if not auction:
         raise HTTPException(404, "Auction not found")
