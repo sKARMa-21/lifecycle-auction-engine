@@ -146,7 +146,7 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
       <PageHeader title="Dashboard" subtitle={`Welcome, ${user.full_name} · ${role}${hostel && !isSuperAdmin ? ` · ${hostel}` : ''}`}
         role={user.role} onLogout={onLogout} />
 
-      {isGuard && <BicycleLookup autoFocus />}
+      {isGuard && <BicycleLookup autoFocus camera />}
       {isAdmin && (
         <div className="kpi-grid" aria-label="Bicycle statistics">
           {bicycleStats.map(({ status, label }) => (

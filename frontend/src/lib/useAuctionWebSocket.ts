@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import type { AuctionBidEvent } from '../types/auction'
 
-const WS_BASE_URL = 'ws://127.0.0.1:8000/ws/auctions'
+const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+const WS_BASE_URL = `${WS_PROTOCOL}//${window.location.host}/ws/auctions`
 
 export function useAuctionWebSocket(
   auctionId: number | null,

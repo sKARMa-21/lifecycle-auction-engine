@@ -1,12 +1,10 @@
-import { apiFetch } from '../lib/api'
+import { API_BASE, apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import BicycleLookup from '../components/BicycleLookup'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import type { StudentSummary, User } from '../types/user'
 import type { Bicycle } from '../types/bicycle'
-
-const API = 'http://127.0.0.1:8000/api/v1'
 
 interface BicyclesPageProps {
   user: User
@@ -41,8 +39,8 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     try {
       setLoading(true)
       const [bRes, uRes] = await Promise.all([
-        apiFetch(`${API}/bicycles/`),
-        isStudent ? Promise.resolve(null) : apiFetch(`${API}/auth/students`),
+        apiFetch(`${API_BASE}/bicycles/`),
+        isStudent ? Promise.resolve(null) : apiFetch(`${API_BASE}/auth/students`),
       ])
       if (!bRes.ok) throw new Error('Could not load bicycles')
       const b = await bRes.json()
@@ -82,7 +80,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
     }
 
     try {
-      const res = await apiFetch(editingId ? `${API}/bicycles/${editingId}` : `${API}/bicycles/`, {
+      const res = await apiFetch(editingId ? `${API_BASE}/bicycles/${editingId}` : `${API_BASE}/bicycles/`, {
         method: editingId ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,7 +105,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
   const remove = async (id: number) => {
     if (!confirm('Are you sure you want to delete this bicycle?')) return
     try {
-      const res = await apiFetch(`${API}/bicycles/${id}`, {
+      const res = await apiFetch(`${API_BASE}/bicycles/${id}`, {
         method: 'DELETE',
       })
       if (res.ok) {
@@ -124,7 +122,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
 
   const transfer = async (id: number, newOwnerId: string) => {
     try {
-      const res = await apiFetch(`${API}/bicycles/${id}/transfer`, {
+      const res = await apiFetch(`${API_BASE}/bicycles/${id}/transfer`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -149,7 +147,7 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
   if (isGuard) return (
     <div className="page-wide">
       <PageHeader title="Bicycle Lookup" role={user.role} onLogout={onLogout} />
-      <BicycleLookup autoFocus />
+      <BicycleLookup autoFocus camera />
     </div>
   )
 

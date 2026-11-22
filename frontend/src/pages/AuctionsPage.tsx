@@ -1,4 +1,4 @@
-import { apiData, apiFetch } from '../lib/api'
+import { API_BASE, apiData, apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -6,8 +6,6 @@ import { isAuctionLive } from '../lib/auction'
 import type { Auction, AuctionBidEvent } from '../types/auction'
 import type { User } from '../types/user'
 import { useAuctionSubscriptions } from '../lib/useAuctionWebSocket'
-
-const API = 'http://127.0.0.1:8000/api/v1'
 
 interface AuctionsPageProps {
   user: User
@@ -54,7 +52,7 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
   const loadAuctions = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await apiFetch(`${API}/auctions/`)
+      const res = await apiFetch(`${API_BASE}/auctions/`)
       if (res.ok) {
         const data = await res.json()
         const list = Array.isArray(data) ? data : []

@@ -3,4 +3,10 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: {
+      '/api/v1': 'http://127.0.0.1:8000',
+      '/ws/auctions': { target: 'ws://127.0.0.1:8000', ws: true },
+    },
+  },
 })

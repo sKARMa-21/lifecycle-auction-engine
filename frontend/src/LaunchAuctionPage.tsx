@@ -1,12 +1,10 @@
-import { apiData, apiFetch } from './lib/api'
+import { API_BASE, apiData, apiFetch } from './lib/api'
 import PageHeader from './components/PageHeader'
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { User } from './types/user'
 import type { Bicycle } from './types/bicycle'
 import type { Auction } from './types/auction'
-
-const API = 'http://127.0.0.1:8000/api/v1'
 
 const toLocalInput = (iso: string) => new Date(new Date(iso).getTime() - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
@@ -36,7 +34,7 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
       }).catch(() => setError('Failed to load auction'))
       return
     }
-    apiFetch(`${API}/bicycles/`)
+    apiFetch(`${API_BASE}/bicycles/`)
       .then((r) => r.json())
       .then((data) => {
         setBicycles((Array.isArray(data) ? data as Bicycle[] : []).filter((b) => b.status === 'auctionable' && b.actions.includes('launch_auction')))
@@ -68,7 +66,7 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
 
     try {
       const { bicycle_id: _bicycle, created_by_id: _creator, ...changes } = payload
-      const res = await apiFetch(editId ? `${API}/auctions/${editId}` : `${API}/auctions/`, {
+      const res = await apiFetch(editId ? `${API_BASE}/auctions/${editId}` : `${API_BASE}/auctions/`, {
         method: editId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editId ? changes : payload),

@@ -1,6 +1,7 @@
 import type { Auction, Bid } from '../types/auction'
+import { API_BASE } from './api'
 
-export const AUCTION_API = 'http://127.0.0.1:8000/api/v1/auctions'
+export const AUCTION_API = `${API_BASE}/auctions`
 export const money = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(amount)
 export const isAuctionLive = (auction: Auction, now = Date.now()) =>
     ['scheduled', 'active', 'extended'].includes(auction.status) &&

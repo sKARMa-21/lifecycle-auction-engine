@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PasswordField from '../components/PasswordField'
+import { API_BASE } from '../lib/api'
 import type { User } from '../types/user'
 
 interface AuthPageProps {
@@ -28,11 +29,11 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
     }
     setLoading(true)
 
-    const endpoint = isRegister ? '/api/v1/auth/register' : '/api/v1/auth/login'
+    const endpoint = isRegister ? '/auth/register' : '/auth/login'
     const body = isRegister ? { full_name: name, email, password, password_confirmation: confirmation } : { email, password }
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000${endpoint}`, {
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
