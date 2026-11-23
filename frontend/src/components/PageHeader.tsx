@@ -1,12 +1,13 @@
 import { useId, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
+import BrandLogo from './BrandLogo'
 
 interface PageHeaderProps {
   title: string
   subtitle?: string
   role: string
   onLogout: () => void
-  action?: { to: string; label: string }
+  action?: { label: string } & ({ to: string } | { onClick: () => void; disabled?: boolean })
 }
 
 export default function PageHeader({ title, subtitle, role, action, onLogout }: PageHeaderProps) {
@@ -36,7 +37,7 @@ export default function PageHeader({ title, subtitle, role, action, onLogout }: 
           menuButton.current?.focus()
         }
       }}>
-        <span className="nav-brand">CycleEngine</span>
+        <BrandLogo />
         <button ref={menuButton} type="button" className="nav-toggle" aria-controls={navId} aria-expanded={menuOpen}
           onClick={() => setOpenFor(menuOpen ? null : key)}>
           Menu <span aria-hidden="true">{menuOpen ? '▴' : '▾'}</span>
@@ -64,7 +65,11 @@ export default function PageHeader({ title, subtitle, role, action, onLogout }: 
           <h1>{title}</h1>
           {subtitle && <p>{subtitle}</p>}
         </div>
-        {action && <Link to={action.to} className="btn-link">{action.label}</Link>}
+        {action && ('to' in action ? (
+          <Link to={action.to} className="btn-link">{action.label}</Link>
+        ) : (
+          <button type="button" className="btn-link" onClick={action.onClick} disabled={action.disabled}>{action.label}</button>
+        ))}
       </div>
     </header>
   )

@@ -39,12 +39,12 @@ export default function AuctionCountdownTimer({ endsAt, isExtended, extensionMin
 
   return (
     <div className="timer-wrap">
-      <span className={`timer-badge ${isUrgent ? 'timer-urgent' : 'timer-normal'}`}>
-        ⏱ {formatted}
+      <span className={`timer-badge${isUrgent ? ' timer-urgent' : ''}`}>
+        {formatted}
       </span>
       {isExtended && (
-        <span className="timer-pill-extended">
-          +{extensionMinutes ?? 1}m Anti-Snipe
+        <span className="timer-pill-extended" title="Bidding extended">
+          +{extensionMinutes ?? 1} min
         </span>
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import BrandLogo from '../components/BrandLogo'
 import PasswordField from '../components/PasswordField'
 import { API_BASE } from '../lib/api'
 import type { User } from '../types/user'
@@ -66,7 +67,7 @@ export default function AuthPage({ onLogin }: AuthPageProps) {
     <main className="auth-page login-page">
       <div className="auth-card">
         <header className="brand-header">
-          <span className="nav-brand">CycleEngine</span>
+          <BrandLogo />
           <h1>{isRegister ? 'Create an account' : 'Sign in'}</h1>
           {isRegister && <p className="subtitle">Students can register with a campus email. Staff accounts are created by a super admin.</p>}
         </header>

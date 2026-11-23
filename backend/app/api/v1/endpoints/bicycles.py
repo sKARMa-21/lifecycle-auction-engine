@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.auction import Auction, AuctionStatus
-from app.models.bicycle import Bicycle
+from app.models.bicycle import Bicycle, CycleState
 from app.models.case import AuctionRequest
 from app.models.lifecycle import LifecycleEvent
 from app.models.user import User, UserRole

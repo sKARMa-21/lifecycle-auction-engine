@@ -71,7 +71,7 @@ class BicycleLifecycleService:
         if not (proof_image_url and location and notes):
             raise InvalidStateTransitionError("A photo, location and condition notes are required to report neglect.")
         bicycle.asset_tagged_at = utcnow()
-        bicycle.claim_deadline = bicycle.asset_tagged_at + timedelta(days=GRACE_DAYS)
+        bicycle.claim_deadline = bicycle.asset_tagged_at + timedelta(minutes=1)#timedelta(days=GRACE_DAYS)
         bicycle.case_hostel_id, bicycle.last_known_location = bike_hostel(db, bicycle), location
         cls._move(bicycle, ACTIVE, ASSET, "tag as asset", actor, notes, db, location=location, proof_image_url=proof_image_url)
         notify(db, [_owner_id(bicycle)], f"Your bicycle {bicycle.asset_tag} was found at {location} and impounded. Claim it before "
