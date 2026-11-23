@@ -3,10 +3,11 @@ import { useState, useEffect } from 'react'
 interface Props {
   endsAt: string
   isExtended?: boolean
+  extensionMinutes?: number
   onExpire?: () => void
 }
 
-export default function AuctionCountdownTimer({ endsAt, isExtended, onExpire }: Props) {
+export default function AuctionCountdownTimer({ endsAt, isExtended, extensionMinutes, onExpire }: Props) {
   const [timeLeft, setTimeLeft] = useState(() => {
     return Math.max(0, new Date(endsAt).getTime() - Date.now())
   })
@@ -41,7 +42,11 @@ export default function AuctionCountdownTimer({ endsAt, isExtended, onExpire }: 
       <span className={`timer-badge ${isUrgent ? 'timer-urgent' : 'timer-normal'}`}>
         ⏱ {formatted}
       </span>
-      {isExtended && <span className="timer-pill-extended">+5m Anti-Snipe</span>}
+      {isExtended && (
+        <span className="timer-pill-extended">
+          +{extensionMinutes ?? 1}m Anti-Snipe
+        </span>
+      )}
     </div>
   )
 }

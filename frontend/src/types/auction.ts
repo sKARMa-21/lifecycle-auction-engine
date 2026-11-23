@@ -5,6 +5,7 @@ export interface Bid {
   auction_id: number
   bidder_id: number
   amount: number
+  status?: string
   placed_at: string
 }
 
@@ -19,6 +20,9 @@ export interface Auction {
   min_bid_increment: number
   starts_at: string
   ends_at: string
+  payment_deadline?: string | null
+  anti_snipe_trigger_window?: number
+  anti_snipe_extension_minutes?: number
   status: AuctionStatus
   created_at: string
   bids?: Bid[]

@@ -173,7 +173,11 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
         <div className="auction-info-row">
           <span>{upcoming ? 'Starts' : live ? 'Time left' : 'Ended'}</span>
           {live ? (
-            <AuctionCountdownTimer endsAt={auction.ends_at} isExtended={isExtended} />
+            <AuctionCountdownTimer
+              endsAt={auction.ends_at}
+              isExtended={isExtended}
+              extensionMinutes={auction.anti_snipe_extension_minutes}
+            />
           ) : (
             <strong>
               {new Date(upcoming ? auction.starts_at : auction.ends_at).toLocaleString([], {
