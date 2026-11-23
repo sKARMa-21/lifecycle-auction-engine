@@ -1,6 +1,7 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timezone
 from decimal import Decimal
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, status, HTTPException
 from app.api.v1.deps import require_complete_profile, require_roles
 from app.models.auction import Auction, AuctionParticipant, AuctionStatus
@@ -112,3 +113,29 @@ def close_ended_auctions(
 ):
     """Cron endpoint: sweeps all live auctions past their end time and marks them ENDED (admin only)."""
     return AuctionService.close_ended_auctions(db)
+
+
+class PaymentPayload(BaseModel):
+    payment_method: str = "upi"
+    transaction_ref: Optional[str] = "UPI-SIMULATED"
+
+
+@router.post("/{auction_id}/pay", response_model=AuctionResponse)
+def pay_auction(
+    auction_id: int,
+    payload: PaymentPayload = PaymentPayload(),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_complete_profile),
+):
+    """Complete 8-minute UPI payment for a won auction."""
+    return AuctionService.pay_auction(db, auction_id, user.id, payload.transaction_ref or "UPI-SIMULATED")
+
+
+@router.post("/{auction_id}/decline-payment", response_model=AuctionResponse)
+def decline_payment(
+    auction_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_complete_profile),
+):
+    """Decline payment and pass the bicycle to the 2nd highest bidder."""
+    return AuctionService.pass_to_runner_up(db, auction_id, declined_by_user_id=user.id)

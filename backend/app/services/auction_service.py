@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.auction import Auction, AuctionParticipant, Bid, AuctionStatus
 from app.models.bicycle import Bicycle, CycleState
+from app.models.lifecycle import LifecycleEvent
 from app.models.user import User, UserRole
 from app.schemas.auction import AuctionCreate, AuctionUpdate, BidCreate
 from app.services.hostel import bike_hostel, can_manage
@@ -169,8 +170,11 @@ class AuctionService:
         is_extended = False
         time_left = ends_at - now
         threshold = timedelta(minutes=auction.anti_snipe_trigger_window)
-        if time_left < threshold:
-            auction.ends_at = ends_at + timedelta(minutes=auction.anti_snipe_extension_minutes)
+        extension = timedelta(minutes=auction.anti_snipe_extension_minutes)
+        max_extensions = 10
+
+        if time_left < threshold and (auction.extension_count or 0) < max_extensions:
+            auction.ends_at = now + extension
             auction.extension_count = (auction.extension_count or 0) + 1
             auction.status = AuctionStatus.EXTENDED
             is_extended = True
@@ -192,106 +196,227 @@ class AuctionService:
         return new_bid
 
     @staticmethod
+    def _sync_auction_state(db: Session, auction: Auction) -> None:
+        now = datetime.now(timezone.utc)
+        ends_at = auction.ends_at if auction.ends_at.tzinfo else auction.ends_at.replace(tzinfo=timezone.utc)
+        if now >= ends_at and auction.status in (AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED):
+            if auction.current_winner_id:
+                auction.status = AuctionStatus.ENDED
+                if not auction.payment_deadline:
+                    auction.payment_deadline = now + timedelta(minutes=8)
+            else:
+                auction.status = AuctionStatus.CANCELLED
+            db.commit()
+            db.refresh(auction)
+        elif auction.status == AuctionStatus.ENDED and auction.payment_deadline:
+            p_deadline = auction.payment_deadline if auction.payment_deadline.tzinfo else auction.payment_deadline.replace(tzinfo=timezone.utc)
+            if now > p_deadline:
+                AuctionService.pass_to_runner_up(db, auction.id)
+
+    @staticmethod
     def get_auction(db: Session, auction_id: int) -> Auction:
         auction = db.query(Auction).filter(Auction.id == auction_id).first()
         if not auction:
             raise HTTPException(status_code=404, detail="Auction not found")
+        AuctionService._sync_auction_state(db, auction)
         return auction
 
     @staticmethod
     def list_active_auctions(db: Session, skip: int = 0, limit: int = 50):
-        return (
+        auctions = (
             db.query(Auction)
-            .filter(Auction.status.in_([AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED]))
+            .filter(Auction.status != AuctionStatus.DRAFT)
+            .order_by(
+                Auction.status.in_([AuctionStatus.ACTIVE, AuctionStatus.EXTENDED, AuctionStatus.SCHEDULED]).desc(),
+                Auction.id.desc(),
+            )
             .offset(skip)
             .limit(limit)
             .all()
         )
+        for a in auctions:
+            AuctionService._sync_auction_state(db, a)
+        return auctions
 
     @staticmethod
-    def settle_auction(db: Session, auction_id: int) -> Auction:
-        """Settle an ended auction.
-
-        - If there is a winner: transitions bicycle AUCTIONABLE -> SOLD,
-          transfers ownership to the winning bidder, marks winning bid as
-          'winning' and all other bids as 'outbid', sets payment deadline.
-        - If no bids were placed: marks the auction CANCELLED and leaves the
-          bicycle in AUCTIONABLE state so it can be re-listed.
-        """
-        auction = (
-            db.query(Auction)
-            .filter(Auction.id == auction_id)
-            .with_for_update()
-            .first()
-        )
+    def pass_to_runner_up(db: Session, auction_id: int, declined_by_user_id: int = None) -> Auction:
+        auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
         if not auction:
             raise HTTPException(status_code=404, detail="Auction not found")
 
-        if auction.status == AuctionStatus.SETTLED:
-            raise HTTPException(status_code=400, detail="Auction is already settled")
+        current_winner = auction.current_winner_id
+        if declined_by_user_id and current_winner != declined_by_user_id:
+            raise HTTPException(status_code=403, detail="Only the leading bidder can decline payment.")
 
-        if auction.status == AuctionStatus.CANCELLED:
-            raise HTTPException(status_code=400, detail="Auction is already cancelled")
-
-        now = datetime.now(timezone.utc)
-        ends_at = auction.ends_at
-        if ends_at.tzinfo is None:
-            ends_at = ends_at.replace(tzinfo=timezone.utc)
-
-        if ends_at > now and auction.status in (
-            AuctionStatus.SCHEDULED, AuctionStatus.ACTIVE, AuctionStatus.EXTENDED
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Auction is still live and ends at {auction.ends_at.isoformat()}.",
-            )
-
-        bicycle = db.get(Bicycle, auction.bicycle_id)
-        if not bicycle:
-            raise HTTPException(status_code=404, detail="Associated bicycle not found")
-
-        if auction.current_winner_id is None:
+        # Anti-exploit: allow at most ONE pass to the runner-up. No cascading chains!
+        already_passed = db.query(Bid).filter(Bid.auction_id == auction.id, Bid.status == "forfeited").first() is not None
+        if already_passed:
+            if current_winner:
+                for b in db.query(Bid).filter(Bid.auction_id == auction.id, Bid.bidder_id == current_winner).all():
+                    b.status = "forfeited"
             auction.status = AuctionStatus.CANCELLED
+            auction.payment_deadline = None
+            bicycle = db.get(Bicycle, auction.bicycle_id)
+            if bicycle:
+                bicycle.status = CycleState.AUCTIONABLE.value
+                bicycle.current_state = CycleState.AUCTIONABLE
+            publish_auction_event(
+                auction.id,
+                {
+                    "type": "AUCTION_CANCELLED",
+                    "auction_id": auction.id,
+                },
+            )
             db.commit()
             db.refresh(auction)
             return auction
 
-        all_bids: List[Bid] = (
+        if current_winner:
+            prev_bids = db.query(Bid).filter(Bid.auction_id == auction.id, Bid.bidder_id == current_winner).all()
+            for b in prev_bids:
+                b.status = "forfeited"
+
+        runner_up = (
             db.query(Bid)
-            .filter(Bid.auction_id == auction_id)
+            .filter(
+                Bid.auction_id == auction.id,
+                Bid.bidder_id != current_winner,
+                Bid.status != "forfeited",
+            )
             .order_by(Bid.amount.desc())
-            .all()
-        )
-        seen_winner = False
-        for bid in all_bids:
-            if bid.bidder_id == auction.current_winner_id and not seen_winner:
-                bid.status = "winning"
-                seen_winner = True
-            else:
-                bid.status = "outbid"
-
-        BicycleLifecycleService.mark_as_sold(
-            bicycle=bicycle,
-            sold_price=auction.current_highest_bid,
-            notes=f"Sold via auction #{auction.id}. Winner: user #{auction.current_winner_id}",
-            db=db,
+            .first()
         )
 
-        bicycle.owner_id = auction.current_winner_id
-        bicycle.current_owner_id = auction.current_winner_id
+        now = datetime.now(timezone.utc)
+        if runner_up:
+            runner_up.status = "winning"
+            auction.current_winner_id = runner_up.bidder_id
+            auction.current_highest_bid = runner_up.amount
+            auction.payment_deadline = now + timedelta(minutes=8)
+            auction.status = AuctionStatus.ENDED
 
-        auction.payment_deadline = now + timedelta(hours=48)
-        auction.status = AuctionStatus.SETTLED
+            notify(
+                db,
+                [runner_up.bidder_id],
+                f"The previous bidder passed on '{auction.title}'. You are now the winning bidder at ₹{runner_up.amount}! Complete your UPI payment within 8 minutes.",
+                auction.bicycle_id,
+            )
+            publish_auction_event(
+                auction.id,
+                {
+                    "type": "RUNNER_UP_ACTIVE",
+                    "auction_id": auction.id,
+                    "winner_id": runner_up.bidder_id,
+                    "amount": float(runner_up.amount),
+                    "payment_deadline": auction.payment_deadline.isoformat(),
+                },
+            )
+        else:
+            auction.status = AuctionStatus.CANCELLED
+            auction.payment_deadline = None
+            bicycle = db.get(Bicycle, auction.bicycle_id)
+            if bicycle:
+                bicycle.status = CycleState.AUCTIONABLE.value
+                bicycle.current_state = CycleState.AUCTIONABLE
+            publish_auction_event(
+                auction.id,
+                {
+                    "type": "AUCTION_CANCELLED",
+                    "auction_id": auction.id,
+                },
+            )
 
         db.commit()
         db.refresh(auction)
         return auction
 
     @staticmethod
+    def pay_auction(db: Session, auction_id: int, user_id: int, payment_ref: str = "UPI-SIMULATED") -> Auction:
+        auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
+        if not auction:
+            raise HTTPException(status_code=404, detail="Auction not found")
+
+        if auction.current_winner_id != user_id:
+            raise HTTPException(status_code=403, detail="Only the winning bidder can complete payment.")
+
+        if auction.status == AuctionStatus.SETTLED:
+            raise HTTPException(status_code=400, detail="Auction payment has already been completed.")
+
+        now = datetime.now(timezone.utc)
+        if auction.payment_deadline:
+            p_deadline = auction.payment_deadline if auction.payment_deadline.tzinfo else auction.payment_deadline.replace(tzinfo=timezone.utc)
+            if now > p_deadline:
+                AuctionService.pass_to_runner_up(db, auction.id)
+                raise HTTPException(status_code=400, detail="Payment window expired. Bicycle was offered to the runner-up bidder.")
+
+        bicycle = db.get(Bicycle, auction.bicycle_id)
+        if not bicycle:
+            raise HTTPException(status_code=404, detail="Associated bicycle not found")
+
+        bicycle.owner_id = user_id
+        bicycle.current_owner_id = user_id
+        bicycle.status = CycleState.ACTIVE.value
+        bicycle.current_state = CycleState.ACTIVE
+
+        bicycle.sold_price = auction.current_highest_bid
+        bicycle.base_price_set = auction.starting_price
+
+        winner = db.get(User, user_id)
+        winner_name = winner.full_name if winner else f"User #{user_id}"
+        record = LifecycleEvent(
+            bicycle_id=bicycle.id,
+            actor_id=user_id,
+            from_state=CycleState.AUCTIONABLE,
+            to_state=CycleState.SOLD,
+            notes=f"Sold via Auction #{auction.id} to {winner_name} for ₹{auction.current_highest_bid}. Ref: {payment_ref}",
+        )
+        db.add(record)
+
+        all_bids = db.query(Bid).filter(Bid.auction_id == auction_id).all()
+        for b in all_bids:
+            if b.bidder_id == user_id and b.amount == auction.current_highest_bid:
+                b.status = "winning"
+            else:
+                b.status = "outbid"
+
+        auction.status = AuctionStatus.SETTLED
+
+        notify(
+            db,
+            [user_id],
+            f"Payment of ₹{auction.current_highest_bid} confirmed! Bicycle #{bicycle.asset_tag} is now active in your bicycle list.",
+            bicycle.id,
+        )
+
+        db.commit()
+        db.refresh(auction)
+
+        publish_auction_event(
+            auction.id,
+            {
+                "type": "PAYMENT_CONFIRMED",
+                "auction_id": auction.id,
+                "winner_id": user_id,
+                "amount": float(auction.current_highest_bid),
+            },
+        )
+        return auction
+
+    @staticmethod
+    def settle_auction(db: Session, auction_id: int) -> Auction:
+        auction = db.query(Auction).filter(Auction.id == auction_id).first()
+        if not auction:
+            raise HTTPException(status_code=404, detail="Auction not found")
+        if auction.current_winner_id:
+            return AuctionService.pay_auction(db, auction_id, auction.current_winner_id, payment_ref="ADMIN-SETTLE")
+        else:
+            auction.status = AuctionStatus.CANCELLED
+            db.commit()
+            db.refresh(auction)
+            return auction
+
+    @staticmethod
     def close_ended_auctions(db: Session) -> List[Auction]:
-        """Cron sweep: finds all SCHEDULED/ACTIVE/EXTENDED auctions past their end time
-        and marks them ENDED so they are ready to be settled.
-        """
         now = datetime.now(timezone.utc)
         expired = (
             db.query(Auction)
@@ -302,6 +427,11 @@ class AuctionService:
             .all()
         )
         for auction in expired:
-            auction.status = AuctionStatus.ENDED
+            if auction.current_winner_id:
+                auction.status = AuctionStatus.ENDED
+                if not auction.payment_deadline:
+                    auction.payment_deadline = now + timedelta(minutes=8)
+            else:
+                auction.status = AuctionStatus.CANCELLED
         db.commit()
         return expired

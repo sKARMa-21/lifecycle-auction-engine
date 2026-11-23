@@ -23,6 +23,7 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
     starts_at: '',
     ends_at: '',
     min_bid_increment: '20',
+    anti_snipe_extension_minutes: '1',
   })
 
   useEffect(() => {
@@ -30,7 +31,8 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
       apiData<Auction>(`/auctions/${editId}`).then(async (a) => {
         setBicycles([await apiData<Bicycle>(`/bicycles/${a.bicycle_id}`)])
         setForm({ bicycle_id: String(a.bicycle_id), title: a.title, starting_price: String(a.starting_price), starts_at: toLocalInput(a.starts_at),
-          ends_at: toLocalInput(a.ends_at), min_bid_increment: String(a.min_bid_increment) })
+          ends_at: toLocalInput(a.ends_at), min_bid_increment: String(a.min_bid_increment),
+          anti_snipe_extension_minutes: String(a.anti_snipe_extension_minutes ?? 1) })
       }).catch(() => setError('Failed to load auction'))
       return
     }
@@ -61,7 +63,7 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
       starts_at: new Date(form.starts_at).toISOString(),
       ends_at: new Date(form.ends_at).toISOString(),
       anti_snipe_trigger_window: 5,
-      anti_snipe_extension_minutes: 5,
+      anti_snipe_extension_minutes: parseInt(form.anti_snipe_extension_minutes, 10) || 1,
     }
 
     try {
@@ -169,6 +171,23 @@ export default function LaunchAuctionPage({ user, onLogout }: { user: User; onLo
                 required
               />
             </div>
+          </div>
+
+          <div className="field">
+            <label>Anti-Snipe Extension Window</label>
+            <select
+              value={form.anti_snipe_extension_minutes}
+              onChange={(e) => setForm({ ...form, anti_snipe_extension_minutes: e.target.value })}
+              className="select-input"
+            >
+              <option value="1">1 minute (Fast Demo / Flash)</option>
+              <option value="2">2 minutes</option>
+              <option value="5">5 minutes (Standard Campus Auction)</option>
+              <option value="10">10 minutes</option>
+            </select>
+            <small style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+              If a bid is placed near the deadline, bidding time will automatically extend by this duration to prevent sniping.
+            </small>
           </div>
 
           <div className="field">

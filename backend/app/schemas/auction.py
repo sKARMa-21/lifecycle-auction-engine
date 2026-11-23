@@ -59,6 +59,8 @@ class AuctionResponse(BaseModel):
     ends_at: datetime
     payment_deadline: Optional[datetime]
     extension_count: int
+    anti_snipe_trigger_window: int = 5
+    anti_snipe_extension_minutes: int = 1
     status: AuctionStatus
     created_at: datetime
     bids: List[BidResponse] = []
