@@ -1,5 +1,6 @@
 import { API_BASE, apiData, apiFetch } from '../lib/api'
 import PageHeader from '../components/PageHeader'
+import AuctionCountdownTimer from '../components/AuctionCountdownTimer'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { isAuctionLive } from '../lib/auction'
@@ -178,10 +179,14 @@ export default function AuctionsPage({ user, onLogout }: AuctionsPageProps) {
                   </div>
 
                   <div className="auction-info-row">
-                    <span>{upcoming ? 'Starts' : live ? 'Ends' : 'Ended'}</span>
-                    <strong>{new Date(upcoming ? auction.starts_at : auction.ends_at).toLocaleString([], {
-                      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-                    })}</strong>
+                    <span>{upcoming ? 'Starts' : live ? 'Time left' : 'Ended'}</span>
+                    {live ? (
+                      <AuctionCountdownTimer endsAt={auction.ends_at} isExtended={isExtended} />
+                    ) : (
+                      <strong>{new Date(upcoming ? auction.starts_at : auction.ends_at).toLocaleString([], {
+                        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                      })}</strong>
+                    )}
                   </div>
 
                   <div className="auction-actions">
