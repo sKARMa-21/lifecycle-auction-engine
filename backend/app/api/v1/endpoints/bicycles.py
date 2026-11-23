@@ -61,7 +61,7 @@ def present(bicycle: Bicycle, user: User, db: Session) -> BicycleOut:
     actions: List[str] = []
     if user.role in ADMINS:
         if can_manage(user, bike_hostel(db, bicycle)):
-            sale = ["mark_sold"] if has_open_auction(bicycle, db) else ["launch_auction", "mark_sold"]
+            sale = [] if has_open_auction(bicycle, db) else ["launch_auction"]
             actions = {"active": ["tag_asset", "edit"], "asset": ["reclaim", "promote"], "auctionable": sale}.get(state, [])
         return BicycleRead.model_validate(bicycle).model_copy(update={"actions": actions})
     message = None
@@ -165,6 +165,19 @@ def transfer_bicycle_ownership(bicycle_id: int, payload: TransferOwnershipReques
     bicycle = get_bicycle_or_404(bicycle_id, db)
     ensure_manager(bicycle, current_user, db)
     ensure_student(payload.new_owner_id, db)
+    prev_owner_id = bicycle.current_owner_id or bicycle.owner_id
+    prev_user = db.get(User, prev_owner_id) if prev_owner_id else None
+    new_user = db.get(User, payload.new_owner_id) if payload.new_owner_id else None
+    from_name = prev_user.full_name if prev_user else (f"User #{prev_owner_id}" if prev_owner_id else "Unassigned / Pool")
+    to_name = new_user.full_name if new_user else (f"User #{payload.new_owner_id}" if payload.new_owner_id else "Unassigned")
+    record = LifecycleEvent(
+        bicycle_id=bicycle.id,
+        actor_id=current_user.id,
+        from_state=bicycle.current_state or CycleState.ACTIVE,
+        to_state=bicycle.current_state or CycleState.ACTIVE,
+        notes=f"Ownership transferred from {from_name} to {to_name} by Admin {current_user.full_name or current_user.email}.",
+    )
+    db.add(record)
     return _save(bicycle, current_user, db, owner_id=payload.new_owner_id, current_owner_id=payload.new_owner_id)
 
 
@@ -222,5 +235,23 @@ def mark_sold(bicycle_id: int, payload: MarkSoldRequest, db: Session = Depends(g
 @router.get("/{bicycle_id}/events", response_model=List[LifecycleEventRead])
 def get_lifecycle_events(bicycle_id: int, db: Session = Depends(get_db), user: User = admin_only):
     """Internal audit history of a bicycle (admins only)."""
-    get_bicycle_or_404(bicycle_id, db)
-    return list(db.scalars(select(LifecycleEvent).where(LifecycleEvent.bicycle_id == bicycle_id).order_by(LifecycleEvent.created_at.asc())))
+    bicycle = get_bicycle_or_404(bicycle_id, db)
+    ensure_manager(bicycle, user, db)
+    events = list(db.scalars(select(LifecycleEvent).where(LifecycleEvent.bicycle_id == bicycle_id).order_by(LifecycleEvent.created_at.desc())))
+    result = []
+    for ev in events:
+        actor = db.get(User, ev.actor_id) if ev.actor_id else None
+        item = LifecycleEventRead(
+            id=ev.id,
+            bicycle_id=ev.bicycle_id,
+            actor_id=ev.actor_id,
+            actor_name=actor.full_name or actor.email if actor else "System",
+            from_state=ev.from_state.value if hasattr(ev.from_state, 'value') else str(ev.from_state),
+            to_state=ev.to_state.value if hasattr(ev.to_state, 'value') else str(ev.to_state),
+            location=ev.location,
+            notes=ev.notes,
+            proof_image_url=ev.proof_image_url,
+            created_at=ev.created_at,
+        )
+        result.append(item)
+    return result

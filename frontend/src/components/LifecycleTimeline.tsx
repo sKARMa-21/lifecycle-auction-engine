@@ -56,14 +56,22 @@ export default function LifecycleTimeline({ bicycle }: LifecycleTimelineProps) {
         </div>
       )}
 
-      {bicycle.status === 'sold' && (
+      {(bicycle.status === 'sold' || (bicycle.status === 'active' && bicycle.sold_price !== null && bicycle.sold_price !== undefined)) && (
         <div className="sold-summary-box">
-          <div className="sold-title">Lifecycle Complete — Cycle Sold</div>
+          <div className="sold-title">
+            {bicycle.status === 'sold' ? 'Lifecycle Complete — Cycle Sold' : 'Auction Sale Record'}
+          </div>
           <div className="sold-grid">
             {bicycle.sold_price !== null && bicycle.sold_price !== undefined && (
               <div>
                 <span className="summary-label">Final Sold Price:</span>
                 <strong>₹{bicycle.sold_price}</strong>
+              </div>
+            )}
+            {bicycle.base_price_set !== null && bicycle.base_price_set !== undefined && (
+              <div>
+                <span className="summary-label">Base/Starting Price:</span>
+                <span>₹{bicycle.base_price_set}</span>
               </div>
             )}
             {bicycle.market_value !== null && bicycle.market_value !== undefined && (

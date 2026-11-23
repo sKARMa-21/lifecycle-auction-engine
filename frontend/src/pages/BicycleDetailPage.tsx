@@ -2,7 +2,7 @@ import { apiData, jsonRequest } from '../lib/api'
 import PageHeader from '../components/PageHeader'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import type { Bicycle } from '../types/bicycle'
+import type { Bicycle, LifecycleEvent } from '../types/bicycle'
 import type { StudentSummary, User } from '../types/user'
 import LifecycleTimeline from '../components/LifecycleTimeline'
 import BicycleQrSticker from '../components/BicycleQrSticker'
@@ -37,6 +37,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
 
   const [bicycle, setBicycle] = useState<Bicycle | null>(null)
   const [users, setUsers] = useState<StudentSummary[]>([])
+  const [events, setEvents] = useState<LifecycleEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -49,15 +50,7 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     min_bid_increment: 50,
     starts_at: '',
     ends_at: '',
-  })
-
-  const [showSoldModal, setShowSoldModal] = useState(false)
-  const [soldForm, setSoldForm] = useState({
-    cycle_condition: 'Good',
-    market_value: 1200,
-    years_used: 2,
-    base_price_set: 600,
-    sold_price: 850,
+    anti_snipe_extension_minutes: 1,
   })
 
   const [showTagAssetModal, setShowTagAssetModal] = useState(false)
@@ -71,10 +64,15 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     if (!id) return
     try {
       setLoading(true)
-      const [bData, uData] = await Promise.all([apiData<Bicycle>(`/bicycles/${id}`),
-        user.role === 'student' ? [] : apiData<StudentSummary[]>('/auth/students')])
+      const isAdm = user.role === 'admin' || user.role === 'super_admin'
+      const [bData, uData, evData] = await Promise.all([
+        apiData<Bicycle>(`/bicycles/${id}`),
+        user.role === 'student' ? [] : apiData<StudentSummary[]>('/auth/students'),
+        isAdm ? apiData<LifecycleEvent[]>(`/bicycles/${id}/events`).catch(() => []) : [],
+      ])
       setBicycle(bData)
       setUsers(uData)
+      setEvents(evData || [])
       setAuctionForm((prev) => ({
         ...prev,
         title: `${bData.brand || ''} ${bData.model || 'Bicycle'} [Tag #${bData.asset_tag}]`.trim(),
@@ -134,15 +132,8 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
       bicycle_id: Number(id), created_by_id: user.id, title: auctionForm.title,
       starting_price: Number(auctionForm.starting_price), min_bid_increment: Number(auctionForm.min_bid_increment),
       starts_at: new Date(auctionForm.starts_at).toISOString(), ends_at: new Date(auctionForm.ends_at).toISOString(),
-      anti_snipe_trigger_window: 5, anti_snipe_extension_minutes: 5,
+      anti_snipe_trigger_window: 5, anti_snipe_extension_minutes: Number(auctionForm.anti_snipe_extension_minutes) || 1,
     }, 'Auction created successfully!', () => { setShowAuctionModal(false); navigate('/auctions') })
-  }
-  const handleMarkSold = (e: FormEvent) => {
-    e.preventDefault()
-    act(`/bicycles/${id}/mark-sold`, {
-      cycle_condition: soldForm.cycle_condition, market_value: Number(soldForm.market_value), years_used: Number(soldForm.years_used),
-      base_price_set: Number(soldForm.base_price_set), sold_price: Number(soldForm.sold_price),
-    }, 'Bicycle marked as SOLD and recorded in analytics.', () => { setShowSoldModal(false); fetchBicycle() })
   }
 
   if (loading) {
@@ -191,7 +182,6 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
     ['reclaim', 'btn-success', 'Return to Owner', handleReclaim],
     ['promote', 'btn-primary', 'Promote to Auctionable', handlePromoteAuctionable],
     ['launch_auction', 'btn-accent', 'Create Auction', () => setShowAuctionModal(true)],
-    ['mark_sold', 'btn-dark', 'Mark as Sold', () => setShowSoldModal(true)],
   ] as const).filter(([action]) => can(action))
 
   return (
@@ -270,6 +260,67 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
       </div>
 
       {bicycle.qr_token && <BicycleQrSticker assetTag={bicycle.asset_tag} token={bicycle.qr_token} />}
+
+      {isAdmin && (
+        <div className="card-wide" style={{ marginTop: '24px' }}>
+          <div className="detail-header-flex">
+            <div>
+              <h3>Lifecycle & Ownership Transfer History</h3>
+              <p className="subtitle">
+                Complete audit trail of ownership transfers, lifecycle milestones, and auction settlements.
+              </p>
+            </div>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              {events.length} event(s) recorded
+            </span>
+          </div>
+
+          {events.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '12px' }}>
+              No lifecycle events recorded yet.
+            </p>
+          ) : (
+            <div style={{ overflowX: 'auto', marginTop: '16px' }}>
+              <table className="simple-table">
+                <thead>
+                  <tr>
+                    <th>Date & Time</th>
+                    <th>Lifecycle Transition</th>
+                    <th>Handled By</th>
+                    <th>Details & Transaction Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((ev) => (
+                    <tr key={ev.id}>
+                      <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem' }}>
+                        {new Date(ev.created_at).toLocaleString([], {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </td>
+                      <td>
+                        <span className="status-badge status-active" style={{ fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                          {ev.from_state} → {ev.to_state}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                        {ev.actor_name || (ev.actor_id ? `User #${ev.actor_id}` : 'System')}
+                      </td>
+                      <td style={{ fontSize: '0.85rem' }}>
+                        {ev.notes || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {showTagAssetModal && (
         <div className="modal-overlay">
@@ -365,72 +416,28 @@ export default function BicycleDetailPage({ user, onLogout }: BicycleDetailPageP
                   required
                 />
               </div>
+              <div className="field">
+                <label>Anti-Snipe Extension Window</label>
+                <select
+                  value={auctionForm.anti_snipe_extension_minutes}
+                  onChange={(e) => setAuctionForm({ ...auctionForm, anti_snipe_extension_minutes: Number(e.target.value) })}
+                  className="select-input"
+                >
+                  <option value={1}>1 minute (Fast Demo / Flash)</option>
+                  <option value={2}>2 minutes</option>
+                  <option value={5}>5 minutes (Standard Campus Auction)</option>
+                  <option value={10}>10 minutes</option>
+                </select>
+                <small style={{ color: '#64748b', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>
+                  Extends auction deadline if a bid is placed near the end.
+                </small>
+              </div>
               <div className="modal-actions">
                 <button type="button" className="btn-toggle" onClick={() => setShowAuctionModal(false)}>
                   Cancel
                 </button>
                 <button type="submit" className="btn-submit btn-sm" disabled={actionLoading}>
                   {actionLoading ? 'Creating...' : 'Launch Auction'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showSoldModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3>Record Sale & Finalize Lifecycle</h3>
-            <form onSubmit={handleMarkSold}>
-              <div className="field">
-                <label>Cycle Condition</label>
-                <input
-                  type="text"
-                  value={soldForm.cycle_condition}
-                  onChange={(e) => setSoldForm({ ...soldForm, cycle_condition: e.target.value })}
-                  placeholder="e.g. Good, Refurbished, Fair"
-                />
-              </div>
-              <div className="field">
-                <label>Estimated Market Value (₹)</label>
-                <input
-                  type="number"
-                  value={soldForm.market_value}
-                  onChange={(e) => setSoldForm({ ...soldForm, market_value: Number(e.target.value) })}
-                />
-              </div>
-              <div className="field">
-                <label>Years Used</label>
-                <input
-                  type="number"
-                  value={soldForm.years_used}
-                  onChange={(e) => setSoldForm({ ...soldForm, years_used: Number(e.target.value) })}
-                />
-              </div>
-              <div className="field">
-                <label>Base Price Set (₹)</label>
-                <input
-                  type="number"
-                  value={soldForm.base_price_set}
-                  onChange={(e) => setSoldForm({ ...soldForm, base_price_set: Number(e.target.value) })}
-                />
-              </div>
-              <div className="field">
-                <label>Final Sold Price (₹) *</label>
-                <input
-                  type="number"
-                  value={soldForm.sold_price}
-                  onChange={(e) => setSoldForm({ ...soldForm, sold_price: Number(e.target.value) })}
-                  required
-                />
-              </div>
-              <div className="modal-actions">
-                <button type="button" className="btn-toggle" onClick={() => setShowSoldModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-submit btn-sm" disabled={actionLoading}>
-                  {actionLoading ? 'Saving...' : 'Finalize Sale'}
                 </button>
               </div>
             </form>

@@ -27,3 +27,16 @@ export interface Bicycle {
   created_at: string
   updated_at: string
 }
+
+export interface LifecycleEvent {
+  id: number
+  bicycle_id: number
+  actor_id?: number | null
+  actor_name?: string | null
+  from_state: string
+  to_state: string
+  location?: string | null
+  notes?: string | null
+  proof_image_url?: string | null
+  created_at: string
+}

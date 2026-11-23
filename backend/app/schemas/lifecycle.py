@@ -35,6 +35,7 @@ class LifecycleEventRead(BaseModel):
     id: int
     bicycle_id: int
     actor_id: Optional[int] = None
+    actor_name: Optional[str] = None
     from_state: str
     to_state: str
     location: Optional[str] = None

@@ -278,9 +278,16 @@ export default function BicyclesPage({ user, onLogout }: BicyclesPageProps) {
                         <td>{b.color || '—'}</td>
                         <td>
                           {isAuthority ? (
-                            <span className={`status-badge status-${b.status}`}>
-                              {b.status?.toUpperCase()}
-                            </span>
+                            <>
+                              <span className={`status-badge status-${b.status}`}>
+                                {b.status?.toUpperCase()}
+                              </span>
+                              {b.sold_price != null && (
+                                <div style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 600, marginTop: '3px' }}>
+                                  Sold: ₹{b.sold_price}
+                                </div>
+                              )}
+                            </>
                           ) : (
                             <span style={{ fontSize: '0.85rem' }}>{b.message || 'Registered'}</span>
                           )}
