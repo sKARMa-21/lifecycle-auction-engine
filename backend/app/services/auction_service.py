@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import List
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.auction import Auction, AuctionParticipant, Bid, AuctionStatus
@@ -243,6 +244,8 @@ class AuctionService:
         auction = db.query(Auction).filter(Auction.id == auction_id).with_for_update().first()
         if not auction:
             raise HTTPException(status_code=404, detail="Auction not found")
+        if auction.status != AuctionStatus.ENDED:
+            raise HTTPException(status_code=400, detail="Payment can only be declined after the auction has ended.")
 
         current_winner = auction.current_winner_id
         if declined_by_user_id and current_winner != declined_by_user_id:
@@ -341,6 +344,8 @@ class AuctionService:
 
         if auction.status == AuctionStatus.SETTLED:
             raise HTTPException(status_code=400, detail="Auction payment has already been completed.")
+        if auction.status != AuctionStatus.ENDED:
+            raise HTTPException(status_code=400, detail="Payment is only possible after the auction has ended.")
 
         now = datetime.now(timezone.utc)
         if auction.payment_deadline:
@@ -403,17 +408,22 @@ class AuctionService:
         return auction
 
     @staticmethod
-    def settle_auction(db: Session, auction_id: int) -> Auction:
-        auction = db.query(Auction).filter(Auction.id == auction_id).first()
-        if not auction:
-            raise HTTPException(status_code=404, detail="Auction not found")
-        if auction.current_winner_id:
-            return AuctionService.pay_auction(db, auction_id, auction.current_winner_id, payment_ref="ADMIN-SETTLE")
-        else:
-            auction.status = AuctionStatus.CANCELLED
-            db.commit()
-            db.refresh(auction)
-            return auction
+    def settle_auction(db: Session, auction_id: int, actor: User) -> Auction:
+        """Hostel admin / super admin settles an ended auction on behalf of its winner."""
+        auction = AuctionService._lock_managed_auction(db, auction_id, actor)
+        AuctionService._sync_auction_state(db, auction)
+        if auction.status != AuctionStatus.ENDED or not auction.current_winner_id:
+            raise HTTPException(status_code=400, detail=f"Only ended auctions with a winner can be settled (this one is {auction.status.value}).")
+        return AuctionService.pay_auction(db, auction_id, auction.current_winner_id, payment_ref="ADMIN-SETTLE")
+
+    @staticmethod
+    def process_expired_payments(db: Session) -> None:
+        """Background job: pass every ENDED auction whose payment window lapsed to the runner-up."""
+        now = datetime.now(timezone.utc)
+        ids = db.scalars(select(Auction.id).where(Auction.status == AuctionStatus.ENDED,
+                                                  Auction.payment_deadline < now)).all()
+        for auction_id in ids:
+            AuctionService.pass_to_runner_up(db, auction_id)
 
     @staticmethod
     def close_ended_auctions(db: Session) -> List[Auction]:

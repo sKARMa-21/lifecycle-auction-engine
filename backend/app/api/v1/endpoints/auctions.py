@@ -95,15 +95,10 @@ def join_auction(auction_id: int, db: Session = Depends(get_db), user: User = De
 def settle_auction(
     auction_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    admin: User = Depends(require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
-    """Settle an ended auction (admin only).
-
-    - Transitions the winning bicycle to SOLD and transfers ownership.
-    - If no bids were placed, cancels the auction and leaves bicycle AUCTIONABLE.
-    - Sets a 48-hour payment deadline for the winner.
-    """
-    return AuctionService.settle_auction(db, auction_id)
+    """Settle an ended auction on the winner's behalf (this hostel's admin or a super admin)."""
+    return AuctionService.settle_auction(db, auction_id, admin)
 
 
 @router.post("/cron/close-ended", response_model=List[AuctionResponse])
