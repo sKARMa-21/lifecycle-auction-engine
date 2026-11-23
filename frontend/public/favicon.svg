@@ -1,11 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <defs>
-    <path id="arrow" d="M15.9 13.4 A24.6 24.6 0 0 1 39.6 8.6 L41.3 3.5 47.1 15 35.9 20.1 37.7 14.6 A18.3 18.3 0 0 0 20 18.2 Z"/>
-  </defs>
-  <g stroke-width="2.8" stroke-linejoin="round">
-    <use href="#arrow" fill="#efe9fc" stroke="#7c3aed"/>
-    <use href="#arrow" fill="#e3f6eb" stroke="#16a34a" transform="rotate(90 32 32)"/>
-    <use href="#arrow" fill="#fff2d7" stroke="#d97706" transform="rotate(180 32 32)"/>
-    <use href="#arrow" fill="#e8f2fc" stroke="#2563eb" transform="rotate(270 32 32)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <rect width="40" height="40" rx="10" fill="#1e293b"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#93c5fd" stroke-width="1.8">
+      <circle cx="11.5" cy="25.5" r="5.5"/>
+      <circle cx="28.5" cy="25.5" r="5.5"/>
+    </g>
+    <path
+      d="M11.5 25.5 16.8 17.5H25L19.9 25.5H11.5Zm8.4 0-4.4-11.1m-2.2 0h4.5m10.7 11.1-5.3-13.2h4.2"
+      stroke="#fff"
+      stroke-width="1.8"
+    />
   </g>
 </svg>
