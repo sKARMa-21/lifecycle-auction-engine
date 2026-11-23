@@ -23,6 +23,10 @@
     letter-spacing: -.025em;
 }
 
+.auction-shell .nav-brand {
+    color: var(--text);
+}
+
 .pool-icon {
     width: 20px;
     height: 20px;
@@ -294,6 +298,123 @@
 .pool-unavailable p {
     margin: 20px 0;
     line-height: 1.6;
+}
+
+.pool-result,
+.pool-payment-dialog {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card-bg);
+    color: var(--text);
+    padding: clamp(20px, 5vw, 32px);
+}
+
+.pool-result {
+    display: grid;
+    gap: 22px;
+    max-width: 520px;
+    margin: clamp(24px, 6vw, 64px) auto 40px;
+}
+
+.pool-result-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
+.pool-result h2,
+.pool-payment-dialog h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.pool-result-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+    align-items: start;
+    gap: 12px 20px;
+}
+
+.pool-result-facts dt { margin-bottom: 4px; }
+.pool-result-facts dd { overflow-wrap: anywhere; }
+
+.pool-result-facts .pool-price {
+    margin: 0;
+    font-size: clamp(1.65rem, 5vw, 2.5rem);
+    line-height: 1.15;
+}
+
+.pool-result-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
+.pool-result-actions .pool-bid-button {
+    width: auto;
+    min-height: 44px;
+    margin: 0;
+    padding: 10px 18px;
+    font-size: .9rem;
+    text-decoration: none;
+}
+
+.pool-text-action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: .875rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.pool-text-action:hover:not(:disabled) { text-decoration: underline; }
+.pool-text-action:disabled { opacity: .6; cursor: default; }
+
+.pool-result-error {
+    color: #ffd7a8;
+    font-size: .875rem;
+    line-height: 1.45;
+}
+
+.pool-payment-dialog {
+    width: min(420px, calc(100% - 32px));
+    margin: auto;
+    text-align: center;
+}
+
+.pool-payment-dialog::backdrop { background: #080f20cc; }
+
+.pool-payment-amount {
+    margin: 4px 0 16px;
+    font-size: 1.4rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.pool-payment-qr {
+    display: inline-block;
+    max-width: 100%;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.pool-payment-qr svg { display: block; max-width: 100%; height: auto; }
+.pool-payment-dialog .pool-result-error { margin-top: 12px; }
+
+.pool-payment-dialog .pool-result-actions {
+    justify-content: center;
+    margin-top: 18px;
 }
 
 .pool-notice {

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import PageHeader from '../components/PageHeader'
-import { apiFetch } from '../lib/api'
+import { apiData, apiFetch, jsonRequest } from '../lib/api'
 import { AUCTION_API, isAuctionLive, money, nextBid, poolBidders } from '../lib/auction'
 import { useAuctionWebSocket } from '../lib/useAuctionWebSocket'
 import type { Auction } from '../types/auction'
@@ -26,6 +26,78 @@ export default function AuctionPoolPage(props: { user: User; onLogout: () => voi
   return <Pool key={id} id={Number(id)} {...props} />
 }
 
+const upiAccount = 'campuscycles@iitb'
+
+function PaymentTime({ remaining }: { remaining: number }) {
+  const countdown = [Math.floor(remaining / 60), remaining % 60]
+    .map((part) => String(part).padStart(2, '0')).join(':')
+
+  return (
+    <span className={`pool-time ${remaining < 60 ? 'pool-urgent' : ''}`}>
+      <PoolIcon name="clock" />
+      <span role="timer" aria-label="Time left to pay">{countdown}</span>
+    </span>
+  )
+}
+
+function PaymentDialog({ auction, remaining, busy, error, onConfirm, onClose }: {
+  auction: Auction
+  remaining: number
+  busy: boolean
+  error: string
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const backRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    dialog?.showModal()
+    backRef.current?.focus()
+    return () => dialog?.close()
+  }, [])
+
+  const upiDetails = new URLSearchParams({
+    pa: upiAccount,
+    pn: 'CampusCycles',
+    am: String(auction.current_highest_bid),
+    tn: `Auction_${auction.id}`,
+  })
+
+  return (
+    <dialog ref={dialogRef} className="pool-payment-dialog" aria-labelledby="pool-payment-title"
+      onCancel={(event) => {
+        event.preventDefault()
+        if (!busy) onClose()
+      }}
+      onClick={({ target, currentTarget, clientX, clientY }) => {
+        const { left, right, top, bottom } = currentTarget.getBoundingClientRect()
+        if (!busy && target === currentTarget && (clientX < left || clientX > right || clientY < top || clientY > bottom)) {
+          onClose()
+        }
+      }}>
+      <header className="pool-result-heading">
+        <h2 id="pool-payment-title">UPI payment</h2>
+        <PaymentTime remaining={remaining} />
+      </header>
+      <p className="pool-payment-amount">{money(auction.current_highest_bid)}</p>
+      <div className="pool-payment-qr">
+        <QRCodeSVG value={`upi://pay?${upiDetails}`} size={176} marginSize={4} title="UPI payment QR code" />
+      </div>
+      <p className="pool-muted">{upiAccount}</p>
+      <p className="pool-muted">Demo only. Do not send money.</p>
+      {error && <p className="pool-result-error" role="alert">{error}</p>}
+      <div className="pool-result-actions">
+        <button type="button" className="pool-bid-button" onClick={onConfirm} disabled={busy}>
+          {busy ? 'Confirming…' : 'Confirm demo payment'}
+        </button>
+        <button type="button" className="pool-text-action" onClick={onClose} disabled={busy} ref={backRef}>Back</button>
+      </div>
+    </dialog>
+  )
+}
+
 function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => void }) {
   const [auction, setAuction] = useState<Auction | null>(null)
   const [revision, refresh] = useState(0)
@@ -35,6 +107,8 @@ function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => 
   const [busy, setBusy] = useState(false)
   const [showUpiModal, setShowUpiModal] = useState(false)
   const [paymentBusy, setPaymentBusy] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+  const [paymentNotice, setPaymentNotice] = useState('')
 
   const live = auction !== null && isAuctionLive(auction, now)
   useAuctionWebSocket(auction ? id : null, () => refresh(value => value + 1))
@@ -51,8 +125,11 @@ function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => 
       try {
         const response = await apiFetch(`${AUCTION_API}/${id}`, { signal: controller.signal })
         if (!response.ok) throw new Error(response.status === 404 ? 'Auction not found.' : 'Unable to update this auction.')
-        setAuction(await response.json())
-        setError('')
+        const nextAuction: Auction = await response.json()
+        if (!controller.signal.aborted) {
+          setAuction(nextAuction)
+          setError('')
+        }
       } catch (err) {
         if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Connection lost. Retrying shortly.')
       }
@@ -79,46 +156,35 @@ function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => 
   }
 
   async function completeUpiPayment() {
-    if (!auction || paymentBusy) return
+    if (!auction || !canPay || paymentBusy) return
     setPaymentBusy(true)
-    setError('')
+    setPaymentError('')
     try {
-      const res = await apiFetch(`${AUCTION_API}/${auction.id}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payment_method: 'upi', transaction_ref: `UPI-${Date.now().toString().slice(-6)}` })
-      })
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.detail || 'Payment processing failed.')
-      }
+      const settled = await apiData<Auction>(`/auctions/${auction.id}/pay`, jsonRequest('POST', {
+        payment_method: 'upi', transaction_ref: `UPI-${Date.now().toString().slice(-6)}`,
+      }))
       setShowUpiModal(false)
-      setNotice('Payment confirmed! Bicycle is now active in your bicycle list.')
+      setAuction(settled)
       refresh(v => v + 1)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment failed.')
+      setPaymentError(err instanceof Error ? err.message : 'Payment failed.')
     } finally {
       setPaymentBusy(false)
     }
   }
 
   async function declinePayment() {
-    if (!auction || paymentBusy) return
-    if (!confirm('Are you sure you want to pass on this bicycle? It will immediately be offered to the 2nd highest bidder.')) return
+    if (!auction || !canDecline || paymentBusy) return
+    if (!confirm('Pass on this bicycle?')) return
     setPaymentBusy(true)
-    setError('')
+    setPaymentError('')
     try {
-      const res = await apiFetch(`${AUCTION_API}/${auction.id}/decline-payment`, {
-        method: 'POST'
-      })
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.detail || 'Could not pass to runner-up.')
-      }
-      setNotice('You passed on this bicycle. It was offered to the 2nd highest bidder.')
+      const updated = await apiData<Auction>(`/auctions/${auction.id}/decline-payment`, { method: 'POST' })
+      setAuction(updated)
+      setPaymentNotice('You passed on this bicycle.')
       refresh(v => v + 1)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error declining payment.')
+      setPaymentError(err instanceof Error ? err.message : 'Could not decline payment.')
     } finally {
       setPaymentBusy(false)
     }
@@ -127,16 +193,23 @@ function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => 
   const bids = [...(auction?.bids || [])].sort((a, b) => b.amount - a.amount)
   const participants = poolBidders(bids, user.id)
   const leading = auction?.current_winner_id === user.id
-  const isWinner = auction?.current_winner_id === user.id
   const isSettled = auction?.status === 'settled'
-  const isEnded = auction?.status === 'ended' || (auction !== null && new Date(auction.ends_at).getTime() <= now)
-  const isPendingPayment = !isSettled && isEnded && auction?.current_winner_id != null
+  const awaitingPayment = auction?.status === 'ended' && auction.current_winner_id != null
   const isRunnerUp = auction?.bids?.some(b => b.status === 'forfeited') ?? false
+  const upcoming = auction?.status === 'scheduled' && Date.parse(auction.starts_at) > now
 
-  const paymentDeadlineMs = auction?.payment_deadline ? new Date(auction.payment_deadline).getTime() : 0
+  const paymentDeadlineMs = auction?.payment_deadline ? Date.parse(auction.payment_deadline) : 0
   const paymentRemainingSeconds = Math.max(0, Math.ceil((paymentDeadlineMs - now) / 1000))
-  const paymentMinutes = Math.floor(paymentRemainingSeconds / 60)
-  const paymentSecs = paymentRemainingSeconds % 60
+  const canPay = awaitingPayment && leading && paymentRemainingSeconds > 0
+  const canDecline = canPay && !isRunnerUp
+  const paymentDialogOpen = showUpiModal && canPay
+
+  let resultTitle = auction?.status === 'cancelled' ? 'Auction cancelled' : 'Auction closed'
+  if (isSettled) resultTitle = leading ? 'Payment confirmed' : 'Auction settled'
+  if (awaitingPayment) {
+    resultTitle = 'Awaiting payment'
+    if (leading) resultTitle = canPay ? (isRunnerUp ? 'Runner-up offer' : 'You won') : 'Payment window closed'
+  }
 
   const seconds = Math.max(0, Math.ceil(((auction ? new Date(auction.ends_at).getTime() : now) - now) / 1000))
   const days = Math.floor(seconds / 86400)
@@ -149,126 +222,57 @@ function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => 
     <PageHeader title={auction?.title || 'Auction pool'} role={user.role} onLogout={onLogout}
       action={auction ? { to: `/bicycles/${auction.bicycle_id}`, label: 'Inspect bicycle' } : undefined} />
     {error && <p className="pool-notice" role="alert">{error}</p>}
-    {notice && <div className="alert alert-success" style={{ marginBottom: '16px' }}>{notice}</div>}
 
     {!auction ? (
-      <p>{error ? 'Return to the auction catalog or try again shortly.' : 'Loading auction…'}</p>
-    ) : new Date(auction.starts_at).getTime() > now ? (
+      error ? <Link to="/auctions" className="pool-text-action">Back to auctions</Link> : <p role="status">Loading auction…</p>
+    ) : upcoming ? (
       <section className="pool-unavailable">
-        <h3>This auction hasn’t started yet.</h3>
-        <p className="pool-muted">Starts on {new Date(auction.starts_at).toLocaleString()}</p>
-        <Link to="/auctions" className="btn-toggle">Back to auctions</Link>
+        <h2>Auction scheduled</h2>
+        <p className="pool-muted">Starts {new Date(auction.starts_at).toLocaleString()}</p>
+        <Link to="/auctions" className="pool-text-action">Back to auctions</Link>
       </section>
-    ) : isSettled ? (
-      <section className="card-wide" style={{ textAlign: 'center', padding: '36px 24px' }}>
-        <span style={{ fontSize: '2.5rem' }}>🏁</span>
-        <h2 style={{ color: '#16a34a', margin: '8px 0 12px' }}>Auction Settled</h2>
-        <p style={{ fontSize: '1.15rem', marginBottom: '20px' }}>
-          Sold for <strong>{money(auction.current_highest_bid)}</strong> to{' '}
-          <strong>{isWinner ? 'You' : `Bidder #${auction.current_winner_id}`}</strong>.
-        </p>
-        {isWinner ? (
-          <div>
-            <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: '16px', borderRadius: '8px', maxWidth: '440px', margin: '0 auto 20px', fontWeight: 600 }}>
-              ✅ Payment confirmed! You are the official owner. This bicycle is now active in your bicycle list.
-            </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <Link to={`/bicycles/${auction.bicycle_id}`} className="btn-submit" style={{ width: 'auto', textDecoration: 'none' }}>
-                View in My Bicycles
-              </Link>
-              <Link to="/auctions" className="btn-toggle" style={{ textDecoration: 'none' }}>
-                Back to Auctions
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <Link to="/auctions" className="btn-toggle" style={{ textDecoration: 'none' }}>
-            Back to Auctions
-          </Link>
-        )}
-      </section>
-    ) : isPendingPayment ? (
-      <div className="card-wide">
-        {isWinner ? (
-          <div style={{ textAlign: 'center', padding: '24px 16px' }}>
-            <span style={{ fontSize: '3rem' }}>{isRunnerUp ? '🚲' : '🎉'}</span>
-            {isRunnerUp ? (
-              <h2 style={{ marginTop: '8px', color: '#0d9488' }}>Runner-Up Offer: Claim This Cycle!</h2>
-            ) : (
-              <h2 style={{ marginTop: '8px', color: '#1d4ed8' }}>Congratulations! You Won the Auction!</h2>
-            )}
-            <p style={{ fontSize: '1.15rem', margin: '12px 0' }}>
-              Bicycle: <strong>{auction.title}</strong> · Price: <strong>{money(auction.current_highest_bid)}</strong>
-            </p>
-
-            <div style={{
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: '8px',
-              padding: '16px',
-              maxWidth: '480px',
-              margin: '20px auto',
-              color: '#991b1b',
-            }}>
-              <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '4px' }}>
-                ⏱ 8-Minute UPI Payment Window
-              </div>
-              <div style={{ fontSize: '1.4rem', fontFamily: 'monospace', fontWeight: 700 }}>
-                {String(paymentMinutes).padStart(2, '0')}:{String(paymentSecs).padStart(2, '0')} remaining
-              </div>
-              <p style={{ fontSize: '0.82rem', marginTop: '8px', color: '#7f1d1d' }}>
-                {isRunnerUp ? (
-                  'As the runner-up bidder, you have been offered this bicycle at your bid price. Please complete payment before the timer expires.'
-                ) : (
-                  'Please complete payment before the timer expires. If you won multiple cycles or do not wish to complete this purchase, you can choose to pass to the 2nd highest bidder.'
-                )}
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', marginTop: '24px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn-submit"
-                style={{ width: 'auto', padding: '12px 28px', fontSize: '1.05rem' }}
-                onClick={() => setShowUpiModal(true)}
-                disabled={paymentBusy || paymentRemainingSeconds <= 0}
-              >
-                📱 Pay {money(auction.current_highest_bid)} via UPI
-              </button>
-              {!isRunnerUp && (
-                <button
-                  type="button"
-                  className="btn-toggle"
-                  style={{ color: '#dc2626', borderColor: '#fca5a5' }}
-                  onClick={declinePayment}
-                  disabled={paymentBusy}
-                >
-                  Pass to 2nd Highest Bidder
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div style={{ textAlign: 'center', padding: '36px 20px' }}>
-            <span style={{ fontSize: '2.5rem' }}>⏳</span>
-            <h3 style={{ marginTop: '8px' }}>Bidding Closed · Awaiting Payment</h3>
-            <p className="pool-muted" style={{ margin: '12px 0' }}>
-              Leading Bidder <strong>#{auction.current_winner_id}</strong> has an 8-minute window to complete UPI payment.
-            </p>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: '440px', margin: '0 auto 20px' }}>
-              If they decline or fail to pay before the window closes, this bicycle will immediately be offered to the runner-up bidder!
-            </p>
-            <Link to="/auctions" className="btn-toggle" style={{ textDecoration: 'none' }}>
-              Back to Auctions
-            </Link>
-          </div>
-        )}
-      </div>
     ) : !live ? (
-      <section className="pool-unavailable">
-        <h3>This auction is closed.</h3>
-        <p className="pool-muted">Bidding has ended.</p>
-        <Link to="/auctions" className="btn-toggle">Back to auctions</Link>
+      <section className="pool-result" aria-labelledby="auction-result-title">
+        <header className="pool-result-heading">
+          <h2 id="auction-result-title">{resultTitle}</h2>
+          {awaitingPayment && paymentRemainingSeconds > 0 && <PaymentTime remaining={paymentRemainingSeconds} />}
+        </header>
+
+        {(isSettled || awaitingPayment) && (
+          <dl className="pool-result-facts">
+            <div>
+              <dt className="pool-muted">{isSettled ? 'Sold for' : canPay ? 'Amount due' : 'Winning bid'}</dt>
+              <dd className="pool-price">{money(auction.current_highest_bid)}</dd>
+            </div>
+            {!leading && auction.current_winner_id != null && (
+              <div>
+                <dt className="pool-muted">{isSettled ? 'Buyer' : 'Winning bidder'}</dt>
+                <dd>Bidder #{auction.current_winner_id}</dd>
+              </div>
+            )}
+          </dl>
+        )}
+
+        {paymentNotice && <p className="pool-muted" role="status">{paymentNotice}</p>}
+        {paymentError && !paymentDialogOpen && <p className="pool-result-error" role="alert">{paymentError}</p>}
+
+        <div className="pool-result-actions">
+          {canPay && (
+            <button type="button" className="pool-bid-button" disabled={paymentBusy} onClick={() => {
+              setPaymentError('')
+              setShowUpiModal(true)
+            }}>Pay with UPI</button>
+          )}
+          {canDecline && (
+            <button type="button" className="pool-text-action" onClick={declinePayment} disabled={paymentBusy}>
+              Pass on bicycle
+            </button>
+          )}
+          {isSettled && leading && (
+            <Link to={`/bicycles/${auction.bicycle_id}`} className="pool-bid-button">View bicycle</Link>
+          )}
+          {!canPay && <Link to="/auctions" className="pool-text-action">Back to auctions</Link>}
+        </div>
       </section>
     ) : <>
       <div className="pool-meta">
@@ -310,45 +314,10 @@ function Pool({ id, user, onLogout }: { id: number; user: User; onLogout: () => 
       </p>
     </>}
 
-    {showUpiModal && auction && (
-      <div className="modal-overlay" onClick={() => setShowUpiModal(false)}>
-        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px', textAlign: 'center', padding: '28px' }}>
-          <h3 style={{ marginBottom: '6px' }}>Scan & Pay via UPI</h3>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-            Pay to <strong>campuscycles@iitb</strong>
-          </p>
-          <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', display: 'inline-block', boxShadow: '0 2px 10px rgba(0,0,0,0.08)' }}>
-            <QRCodeSVG
-              value={`upi://pay?pa=campuscycles@iitb&pn=CampusCycles&am=${auction.current_highest_bid}&tn=Auction_${auction.id}`}
-              size={176}
-            />
-          </div>
-          <div style={{ margin: '16px 0 4px', fontSize: '1.3rem', fontWeight: 700 }}>
-            Amount: {money(auction.current_highest_bid)}
-          </div>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-            Supports GPay, PhonePe, Paytm, or BHIM.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <button
-              type="button"
-              className="btn-submit"
-              onClick={completeUpiPayment}
-              disabled={paymentBusy}
-            >
-              {paymentBusy ? 'Verifying payment…' : 'Simulate / Confirm UPI Payment'}
-            </button>
-            <button
-              type="button"
-              className="btn-toggle"
-              onClick={() => setShowUpiModal(false)}
-              disabled={paymentBusy}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
+    {paymentDialogOpen && auction && (
+      <PaymentDialog auction={auction} remaining={paymentRemainingSeconds} busy={paymentBusy} error={paymentError}
+        onConfirm={completeUpiPayment}
+        onClose={() => { setShowUpiModal(false); setPaymentError('') }} />
     )}
   </div></div>
 }
